@@ -1,0 +1,4 @@
+nicegui>=1.4.0
+requests
+beautifulsoup4
+lxml
