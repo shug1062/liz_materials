@@ -307,6 +307,29 @@ class Database:
         finally:
             conn.close()
     
+    def delete_student(self, student_id: int) -> bool:
+        """Delete a student and all their associated records (purchases, payments)"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Delete associated purchases
+            cursor.execute('DELETE FROM purchases WHERE student_id = ?', (student_id,))
+            
+            # Delete associated payments
+            cursor.execute('DELETE FROM payments WHERE student_id = ?', (student_id,))
+            
+            # Delete the student
+            cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to delete student: {e}")
+        finally:
+            conn.close()
+    
     # ============ MATERIALS ============
     
     def add_material(self, name: str, category: str, unit_type: str, base_price: float,

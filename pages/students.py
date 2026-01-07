@@ -186,6 +186,41 @@ def student_detail_page(student_id: int):
         
         dialog.open()
     
+    def show_delete_student_dialog():
+        """Show confirmation dialog to delete student"""
+        with ui.dialog() as dialog, ui.card().classes('w-96'):
+            ui.label('⚠️ Delete Student?').classes('text-xl font-bold mb-4 text-red-600')
+            ui.label(f"Student: {student['name']}").classes('text-gray-800 font-bold')
+            if student.get('class_name'):
+                ui.label(f"Class: {student['class_name']}").classes('text-gray-600')
+            
+            ui.separator().classes('my-4')
+            
+            ui.label('This will permanently delete:').classes('font-bold text-red-600 mb-2')
+            ui.label('• All purchase records').classes('text-sm text-gray-700')
+            ui.label('• All payment records').classes('text-sm text-gray-700')
+            ui.label('• All student information').classes('text-sm text-gray-700')
+            
+            ui.separator().classes('my-4')
+            
+            ui.label('⚠️ This action CANNOT be undone!').classes('text-red-600 font-bold')
+            
+            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                ui.button('Cancel', on_click=dialog.close).props('flat')
+                
+                def confirm_delete():
+                    try:
+                        db.delete_student(student_id)
+                        ui.notify(f'Student {student["name"]} deleted successfully', type='positive')
+                        dialog.close()
+                        ui.navigate.to('/students')
+                    except Exception as e:
+                        ui.notify(f'Error deleting student: {str(e)}', type='negative')
+                
+                ui.button('Delete Permanently', on_click=confirm_delete).props('color=red')
+        
+        dialog.open()
+    
     with ui.column().classes('w-full items-center p-4'):
         ui.button('← Back to Students', on_click=lambda: ui.navigate.to('/students')).props('flat').classes('self-start')
         
@@ -203,7 +238,9 @@ def student_detail_page(student_id: int):
                     if student['notes']:
                         ui.label(f"Notes: {student['notes']}").classes('text-gray-600 mt-2')
                 
-                ui.button('✏️ Edit Details', on_click=lambda: show_edit_student_dialog(student)).props('outline')
+                with ui.row().classes('gap-2'):
+                    ui.button('✏️ Edit Details', on_click=lambda: show_edit_student_dialog(student)).props('outline')
+                    ui.button('🗑️ Delete Student', on_click=show_delete_student_dialog).props('outline color=red')
         
         # Balance summary
         with ui.card().classes('w-full max-w-6xl mb-4 bg-gradient-to-r from-blue-50 to-purple-50'):
