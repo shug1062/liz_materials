@@ -133,6 +133,16 @@ class Database:
             )
         ''')
         
+        # Category order table - stores custom ordering of material categories
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS category_order (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_name TEXT NOT NULL UNIQUE,
+                sort_order INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
         # Create indexes for better query performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_student ON purchases(student_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_material ON purchases(material_id)')
@@ -923,5 +933,123 @@ class Database:
         except Exception as e:
             conn.rollback()
             raise Exception(f"Failed to move class down: {e}")
+        finally:
+            conn.close()
+    
+    # ============ CATEGORY ORDERING ============
+    
+    def get_category_order(self) -> Dict[str, int]:
+        """Get the custom ordering for all categories as a dictionary {category_name: sort_order}"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT category_name, sort_order FROM category_order ORDER BY sort_order')
+        order_dict = {row['category_name']: row['sort_order'] for row in cursor.fetchall()}
+        conn.close()
+        return order_dict
+    
+    def get_ordered_categories(self) -> List[str]:
+        """Get all material categories in their custom order"""
+        # Get all unique category names from materials
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT category FROM materials WHERE category IS NOT NULL AND category != ""')
+        all_categories = [row[0] for row in cursor.fetchall()]
+        
+        # Get custom ordering
+        cursor.execute('SELECT category_name, sort_order FROM category_order ORDER BY sort_order')
+        ordered = [row[0] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        # Add ordered categories that still exist in materials
+        result = []
+        for category_name in ordered:
+            if category_name in all_categories:
+                result.append(category_name)
+        
+        # Add remaining categories alphabetically
+        for category_name in sorted(all_categories):
+            if category_name not in result:
+                result.append(category_name)
+        
+        return result
+    
+    def set_category_order(self, category_names: List[str]):
+        """Set the order for all categories. category_names should be in the desired order."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Clear existing order
+            cursor.execute('DELETE FROM category_order')
+            
+            # Insert new order
+            for idx, category_name in enumerate(category_names):
+                cursor.execute(
+                    'INSERT INTO category_order (category_name, sort_order) VALUES (?, ?)',
+                    (category_name, idx)
+                )
+            
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to set category order: {e}")
+        finally:
+            conn.close()
+    
+    def move_category_up(self, category_name: str) -> bool:
+        """Move a category up in the ordering (decrease sort_order)"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Get current order
+            cursor.execute('SELECT category_name, sort_order FROM category_order ORDER BY sort_order')
+            ordered = [(row[0], row[1]) for row in cursor.fetchall()]
+            
+            # Find the category and swap with previous
+            for i, (name, order) in enumerate(ordered):
+                if name == category_name and i > 0:
+                    # Swap with previous
+                    prev_name, prev_order = ordered[i - 1]
+                    cursor.execute('UPDATE category_order SET sort_order = ? WHERE category_name = ?', (prev_order, category_name))
+                    cursor.execute('UPDATE category_order SET sort_order = ? WHERE category_name = ?', (order, prev_name))
+                    conn.commit()
+                    return True
+            
+            conn.close()
+            return False
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to move category up: {e}")
+        finally:
+            conn.close()
+    
+    def move_category_down(self, category_name: str) -> bool:
+        """Move a category down in the ordering (increase sort_order)"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Get current order
+            cursor.execute('SELECT category_name, sort_order FROM category_order ORDER BY sort_order')
+            ordered = [(row[0], row[1]) for row in cursor.fetchall()]
+            
+            # Find the category and swap with next
+            for i, (name, order) in enumerate(ordered):
+                if name == category_name and i < len(ordered) - 1:
+                    # Swap with next
+                    next_name, next_order = ordered[i + 1]
+                    cursor.execute('UPDATE category_order SET sort_order = ? WHERE category_name = ?', (next_order, category_name))
+                    cursor.execute('UPDATE category_order SET sort_order = ? WHERE category_name = ?', (order, next_name))
+                    conn.commit()
+                    return True
+            
+            conn.close()
+            return False
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to move category down: {e}")
         finally:
             conn.close()

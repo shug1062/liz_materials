@@ -332,6 +332,71 @@ def show_edit_material_dialog(material, refresh_callback):
 
 # ============ TABLE RENDERING (Extracted for clarity) ============
 
+def show_reorder_categories_dialog(refresh_callback):
+    """Show dialog to reorder material categories"""
+    ordered_categories = db.get_ordered_categories()
+    
+    if not ordered_categories:
+        ui.notify('No categories found', type='warning')
+        return
+    
+    # Initialize the category order in the database if not already set
+    # This ensures all categories are in the category_order table
+    db.set_category_order(ordered_categories)
+    
+    with ui.dialog() as dialog, ui.card().classes('w-96'):
+        ui.label('Reorder Categories').classes('text-xl font-bold mb-4')
+        ui.label('Use arrows to change the order of categories').classes('text-sm text-gray-600 mb-4')
+        
+        # Container for the category list
+        list_container = ui.column().classes('w-full gap-2')
+        
+        def render_list():
+            list_container.clear()
+            current_order = db.get_ordered_categories()
+            
+            with list_container:
+                for idx, category in enumerate(current_order):
+                    with ui.row().classes('w-full items-center gap-2 p-2 bg-gray-50 rounded'):
+                        ui.label(category).classes('flex-grow')
+                        
+                        with ui.row().classes('gap-1'):
+                            # Up arrow
+                            if idx > 0:
+                                def move_up(cat=category):
+                                    result = db.move_category_up(cat)
+                                    if result:
+                                        render_list()
+                                    else:
+                                        ui.notify('Could not move category up', type='warning')
+                                ui.button('↑', on_click=move_up).props('dense flat size=sm')
+                            else:
+                                ui.label('').classes('w-8')  # Spacer
+                            
+                            # Down arrow
+                            if idx < len(current_order) - 1:
+                                def move_down(cat=category):
+                                    result = db.move_category_down(cat)
+                                    if result:
+                                        render_list()
+                                    else:
+                                        ui.notify('Could not move category down', type='warning')
+                                ui.button('↓', on_click=move_down).props('dense flat size=sm')
+                            else:
+                                ui.label('').classes('w-8')  # Spacer
+        
+        render_list()
+        
+        with ui.row().classes('w-full justify-end gap-2 mt-4'):
+            def close_and_refresh():
+                dialog.close()
+                refresh_callback()
+            
+            ui.button('Done', on_click=close_and_refresh).props('color=primary')
+    
+    dialog.open()
+
+
 def render_materials_table(material_container, refresh_callback):
     """Render the materials table grouped by category"""
     material_container.clear()
@@ -345,8 +410,37 @@ def render_materials_table(material_container, refresh_callback):
             categories[cat] = []
         categories[cat].append(material)
     
+    # Get ordered categories
+    ordered_categories = db.get_ordered_categories()
+    
     with material_container:
-        for category, items in sorted(categories.items()):
+        # Render ordered categories first
+        for category in ordered_categories:
+            if category in categories:
+                items = categories[category]
+                ui.label(category).classes('text-2xl font-bold mt-4 mb-2')
+                
+                with ui.grid(columns=10).classes('w-full gap-2 mb-4'):
+                    # Header row
+                    ui.label('Name').classes('font-bold')
+                    ui.label('Status').classes('font-bold')
+                    ui.label('Pricing').classes('font-bold')
+                    ui.label('Pack Price').classes('font-bold')
+                    ui.label('Pack Qty').classes('font-bold')
+                    ui.label('Price/Item').classes('font-bold')
+                    ui.label('Markup %').classes('font-bold')
+                    ui.label('Final Price/Item').classes('font-bold')
+                    ui.label('Supplier').classes('font-bold')
+                    ui.label('Actions').classes('font-bold')
+                    
+                    # Material rows
+                    for material in items:
+                        render_material_row(material, refresh_callback)
+        
+        # Render any remaining categories not in the custom order (alphabetically)
+        remaining_categories = sorted([cat for cat in categories.keys() if cat not in ordered_categories])
+        for category in remaining_categories:
+            items = categories[category]
             ui.label(category).classes('text-2xl font-bold mt-4 mb-2')
             
             with ui.grid(columns=10).classes('w-full gap-2 mb-4'):
@@ -365,6 +459,7 @@ def render_materials_table(material_container, refresh_callback):
                 # Material rows
                 for material in items:
                     render_material_row(material, refresh_callback)
+
 
 
 def render_material_row(material, refresh_callback):
@@ -449,6 +544,8 @@ def materials_page():
             ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat')
             ui.label('Materials').classes('text-3xl font-bold')
             with ui.row().classes('gap-2'):
+                ui.button('↕️ Reorder Categories', 
+                         on_click=lambda: show_reorder_categories_dialog(refresh)).props('color=purple')
                 ui.button('🔄 Update All Prices', 
                          on_click=lambda: update_all_prices(refresh)).props('color=orange')
                 ui.button('+ Add Material', 
