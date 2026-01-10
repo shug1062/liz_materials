@@ -3,6 +3,7 @@ Silver Jewellery Studio - Material Tracker
 Main application entry point (refactored version)
 """
 from nicegui import ui
+from typing import Optional
 
 # Import all page functions
 from pages.dashboard import dashboard_page
@@ -20,8 +21,8 @@ def index():
 
 
 @ui.page('/students')
-def students():
-    students_page()
+def students(class_name: Optional[str] = None):
+    students_page(selected_class=class_name)
 
 
 @ui.page('/student/{student_id}')

@@ -3,11 +3,12 @@ from nicegui import ui
 from datetime import datetime
 from database import Database
 from utils import create_header, format_currency
+from typing import Optional
 
 db = Database()
 
 
-def students_page():
+def students_page(selected_class: Optional[str] = None):
     """Students management page"""
     create_header()
     
@@ -48,9 +49,10 @@ def students_page():
                     students_in_class = classes[class_name]
                     
                     # Create an expansion panel for each class
-                    with ui.expansion(class_name, icon='school').classes('w-full') as expansion:
-                        expansion.props('default-opened')  # Start expanded
-                        expansion.classes('bg-blue-50 mb-2')
+                    # Set value=True to open, value=False to close
+                    should_open = (selected_class is None) or (class_name == selected_class)
+                    
+                    with ui.expansion(class_name, icon='school', value=should_open).classes('w-full bg-blue-50 mb-2') as expansion:
                         
                         # Add class summary in header
                         total_owed = sum(s['balance']['balance'] for s in students_in_class if s['balance']['balance'] < 0)

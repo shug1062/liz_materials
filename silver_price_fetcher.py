@@ -46,9 +46,10 @@ class SilverPriceFetcher:
             # Try to get from cache first
             cached = self.get_cached_price()
             if cached:
-                print(f"✅ Using cached silver price: £{cached['price_per_kg']:.2f}/kg")
+                # Silently use cached price - no need to print every time
                 return cached
             
+            # Only print when actually fetching
             print("🔍 Fetching fresh silver price from Cooksongold...")
             
             headers = {

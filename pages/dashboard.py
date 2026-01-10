@@ -4,6 +4,7 @@ from datetime import datetime
 from database import Database
 from utils import create_header, format_currency
 from silver_price_fetcher import SilverPriceFetcher
+from urllib.parse import quote
 
 db = Database()
 silver_fetcher = SilverPriceFetcher()
@@ -86,6 +87,31 @@ def dashboard_page():
                         ui.label('Silver Price').classes('text-xl font-bold text-amber-600')
                         ui.label('Unable to fetch price').classes('text-gray-500 text-sm mt-2')
                         ui.button('🔄 Try Again', on_click=refresh_silver_price).props('flat dense size=sm').classes('mt-2 text-xs')
+        
+        # Class buttons section
+        with ui.card().classes('w-full max-w-6xl'):
+            ui.label('Classes').classes('text-xl font-bold mb-4')
+            
+            # Get all classes
+            ordered_classes = db.get_ordered_classes()
+            
+            if ordered_classes:
+                with ui.row().classes('w-full gap-2 flex-wrap'):
+                    for class_name in ordered_classes:
+                        # Get students count for this class
+                        all_students = db.get_all_students()
+                        students_in_class = [s for s in all_students if s.get('class_name') == class_name]
+                        count = len(students_in_class)
+                        
+                        # Create button with class name and student count
+                        # Encode the class name for URL
+                        encoded_name = quote(class_name)
+                        ui.button(
+                            f"{class_name} ({count})",
+                            on_click=lambda en=encoded_name: ui.navigate.to(f'/students?class_name={en}')
+                        ).props('outline').classes('flex-grow')
+            else:
+                ui.label('No classes created yet').classes('text-gray-500')
         
         # Quick action buttons
         with ui.row().classes('w-full max-w-6xl gap-4 mb-8'):
