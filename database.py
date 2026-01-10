@@ -123,6 +123,16 @@ class Database:
             )
         ''')
         
+        # Class order table - stores custom ordering of class names
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS class_order (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                class_name TEXT NOT NULL UNIQUE,
+                sort_order INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
         # Create indexes for better query performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_student ON purchases(student_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_material ON purchases(material_id)')
@@ -131,6 +141,7 @@ class Database:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_student ON payments(student_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(payment_date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_materials_active ON materials(is_active)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_class_order ON class_order(sort_order)')
         
         conn.commit()
         conn.close()
@@ -796,3 +807,121 @@ class Database:
             })
         
         return balances
+    
+    # ============ CLASS ORDERING ============
+    
+    def get_class_order(self) -> Dict[str, int]:
+        """Get the custom ordering for all classes as a dictionary {class_name: sort_order}"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT class_name, sort_order FROM class_order ORDER BY sort_order')
+        order_dict = {row['class_name']: row['sort_order'] for row in cursor.fetchall()}
+        conn.close()
+        return order_dict
+    
+    def get_ordered_classes(self) -> List[str]:
+        """Get all class names in their custom order"""
+        # Get all unique class names from students
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT class_name FROM students WHERE class_name IS NOT NULL AND class_name != ""')
+        all_classes = [row[0] for row in cursor.fetchall()]
+        
+        # Get custom ordering
+        cursor.execute('SELECT class_name, sort_order FROM class_order ORDER BY sort_order')
+        ordered = [row[0] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        # Add any classes that don't have a custom order yet (new classes)
+        result = []
+        for class_name in ordered:
+            if class_name in all_classes:
+                result.append(class_name)
+        
+        # Add remaining classes alphabetically
+        for class_name in sorted(all_classes):
+            if class_name not in result:
+                result.append(class_name)
+        
+        return result
+    
+    def set_class_order(self, class_names: List[str]):
+        """Set the order for all classes. class_names should be in the desired order."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Clear existing order
+            cursor.execute('DELETE FROM class_order')
+            
+            # Insert new order
+            for idx, class_name in enumerate(class_names):
+                cursor.execute(
+                    'INSERT INTO class_order (class_name, sort_order) VALUES (?, ?)',
+                    (class_name, idx)
+                )
+            
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to set class order: {e}")
+        finally:
+            conn.close()
+    
+    def move_class_up(self, class_name: str) -> bool:
+        """Move a class up in the ordering (decrease sort_order)"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Get current order
+            cursor.execute('SELECT class_name, sort_order FROM class_order ORDER BY sort_order')
+            ordered = [(row[0], row[1]) for row in cursor.fetchall()]
+            
+            # Find the class and swap with previous
+            for i, (name, order) in enumerate(ordered):
+                if name == class_name and i > 0:
+                    # Swap with previous
+                    prev_name, prev_order = ordered[i - 1]
+                    cursor.execute('UPDATE class_order SET sort_order = ? WHERE class_name = ?', (prev_order, class_name))
+                    cursor.execute('UPDATE class_order SET sort_order = ? WHERE class_name = ?', (order, prev_name))
+                    conn.commit()
+                    return True
+            
+            conn.close()
+            return False
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to move class up: {e}")
+        finally:
+            conn.close()
+    
+    def move_class_down(self, class_name: str) -> bool:
+        """Move a class down in the ordering (increase sort_order)"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Get current order
+            cursor.execute('SELECT class_name, sort_order FROM class_order ORDER BY sort_order')
+            ordered = [(row[0], row[1]) for row in cursor.fetchall()]
+            
+            # Find the class and swap with next
+            for i, (name, order) in enumerate(ordered):
+                if name == class_name and i < len(ordered) - 1:
+                    # Swap with next
+                    next_name, next_order = ordered[i + 1]
+                    cursor.execute('UPDATE class_order SET sort_order = ? WHERE class_name = ?', (next_order, class_name))
+                    cursor.execute('UPDATE class_order SET sort_order = ? WHERE class_name = ?', (order, next_name))
+                    conn.commit()
+                    return True
+            
+            conn.close()
+            return False
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to move class down: {e}")
+        finally:
+            conn.close()

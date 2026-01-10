@@ -15,7 +15,9 @@ def students_page():
         with ui.row().classes('w-full max-w-6xl items-center justify-between mb-4'):
             ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat')
             ui.label('Students').classes('text-3xl font-bold')
-            ui.button('+ Add Student', on_click=lambda: show_add_student_dialog())
+            with ui.row().classes('gap-2'):
+                ui.button('⚙️ Reorder Classes', on_click=lambda: show_reorder_dialog()).props('flat color=blue-grey')
+                ui.button('+ Add Student', on_click=lambda: show_add_student_dialog())
         
         # Student list with balances
         student_container = ui.column().classes('w-full max-w-6xl gap-4')
@@ -34,10 +36,15 @@ def students_page():
                 classes[class_name].append({'student': student, 'balance': balance})
             
             with student_container:
-                # Sort classes alphabetically, but put 'No Class Assigned' at the end
-                sorted_classes = sorted(classes.keys(), key=lambda x: (x == 'No Class Assigned', x))
+                # Get custom class order
+                ordered_classes = db.get_ordered_classes()
                 
-                for class_name in sorted_classes:
+                # Add 'No Class Assigned' at the end if it exists
+                if 'No Class Assigned' in classes and 'No Class Assigned' not in ordered_classes:
+                    ordered_classes.append('No Class Assigned')
+                
+                # Display classes in custom order
+                for class_name in ordered_classes:
                     students_in_class = classes[class_name]
                     
                     # Create an expansion panel for each class
@@ -88,6 +95,70 @@ def students_page():
                                     ui.button('View Details', on_click=lambda s_id=student['id']: ui.navigate.to(f'/student/{s_id}'))
         
         refresh_students()
+        
+        def show_reorder_dialog():
+            """Show dialog to reorder classes"""
+            # Get current ordered classes (excluding 'No Class Assigned')
+            ordered_classes = db.get_ordered_classes()
+            ordered_classes = [c for c in ordered_classes if c != 'No Class Assigned']
+            
+            # If no custom order exists yet, initialize it
+            if not ordered_classes:
+                # Get all unique class names from students
+                all_students = db.get_all_students()
+                unique_classes = sorted(list(set(s.get('class_name') for s in all_students if s.get('class_name') and s.get('class_name') != '')))
+                db.set_class_order(unique_classes)
+                ordered_classes = unique_classes
+            
+            class_list = ordered_classes.copy()
+            
+            with ui.dialog() as dialog, ui.card().classes('w-96'):
+                ui.label('Reorder Classes').classes('text-xl font-bold mb-4')
+                ui.label('Use the arrows to change the order of classes').classes('text-sm text-gray-600 mb-4')
+                
+                list_container = ui.column().classes('w-full gap-2')
+                
+                def refresh_list():
+                    list_container.clear()
+                    with list_container:
+                        for idx, class_name in enumerate(class_list):
+                            with ui.row().classes('w-full items-center justify-between p-2 bg-gray-50 rounded'):
+                                ui.label(class_name).classes('font-bold')
+                                with ui.row().classes('gap-1'):
+                                    # Up arrow
+                                    up_btn = ui.button('↑', on_click=lambda i=idx: move_up(i)).props('flat dense size=sm')
+                                    if idx == 0:
+                                        up_btn.props('disable')
+                                    
+                                    # Down arrow
+                                    down_btn = ui.button('↓', on_click=lambda i=idx: move_down(i)).props('flat dense size=sm')
+                                    if idx == len(class_list) - 1:
+                                        down_btn.props('disable')
+                
+                def move_up(idx):
+                    if idx > 0:
+                        class_list[idx], class_list[idx - 1] = class_list[idx - 1], class_list[idx]
+                        refresh_list()
+                
+                def move_down(idx):
+                    if idx < len(class_list) - 1:
+                        class_list[idx], class_list[idx + 1] = class_list[idx + 1], class_list[idx]
+                        refresh_list()
+                
+                refresh_list()
+                
+                with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                    ui.button('Cancel', on_click=dialog.close).props('flat')
+                    
+                    def save_order():
+                        db.set_class_order(class_list)
+                        ui.notify('Class order updated!', type='positive')
+                        dialog.close()
+                        refresh_students()
+                    
+                    ui.button('Save Order', on_click=save_order).props('color=primary')
+            
+            dialog.open()
         
         def show_add_student_dialog():
             # Get existing class names for autocomplete
