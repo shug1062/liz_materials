@@ -37,3 +37,6 @@ materials_body.py
 delete*
 database_backups*
 *.zip
+
+# Silver price cache
+silver_price_cache.json

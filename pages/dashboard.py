@@ -3,8 +3,10 @@ from nicegui import ui
 from datetime import datetime
 from database import Database
 from utils import create_header, format_currency
+from silver_price_fetcher import SilverPriceFetcher
 
 db = Database()
+silver_fetcher = SilverPriceFetcher()
 
 
 def dashboard_page():
@@ -14,8 +16,10 @@ def dashboard_page():
     with ui.column().classes('w-full items-center p-4'):
         ui.label('Dashboard').classes('text-3xl font-bold mb-4')
         
-        # Summary cards
-        with ui.row().classes('w-full max-w-6xl gap-4 mb-8'):
+        # Summary cards - All 5 in one row with consistent height
+        summary_row = ui.row().classes('w-full max-w-6xl gap-4 mb-8')
+        
+        with summary_row:
             students = db.get_all_students()
             materials = db.get_all_materials()
             balances = db.get_all_student_balances()
@@ -23,22 +27,65 @@ def dashboard_page():
             total_debt = sum(abs(b['balance']) for b in balances if b['balance'] < 0)
             total_credit = sum(b['balance'] for b in balances if b['balance'] > 0)
             
-            # Summary cards
-            with ui.card().classes('flex-1 bg-blue-50'):
-                ui.label(f'{len(students)}').classes('text-4xl font-bold text-blue-600')
-                ui.label('Total Students').classes('text-gray-600')
+            # Summary cards - all with fixed height for consistency
+            with ui.card().classes('flex-1 bg-blue-50 h-40 flex items-center justify-center'):
+                with ui.column().classes('items-center'):
+                    ui.label(f'{len(students)}').classes('text-4xl font-bold text-blue-600')
+                    ui.label('Total Students').classes('text-gray-600')
             
-            with ui.card().classes('flex-1 bg-green-50'):
-                ui.label(f'{len(materials)}').classes('text-4xl font-bold text-green-600')
-                ui.label('Materials in Stock').classes('text-gray-600')
+            with ui.card().classes('flex-1 bg-green-50 h-40 flex items-center justify-center'):
+                with ui.column().classes('items-center'):
+                    ui.label(f'{len(materials)}').classes('text-4xl font-bold text-green-600')
+                    ui.label('Materials in Stock').classes('text-gray-600')
             
-            with ui.card().classes('flex-1 bg-red-50'):
-                ui.label(format_currency(total_debt)).classes('text-4xl font-bold text-red-600')
-                ui.label('Total Outstanding Debt').classes('text-gray-600')
+            with ui.card().classes('flex-1 bg-red-50 h-40 flex items-center justify-center'):
+                with ui.column().classes('items-center'):
+                    ui.label(format_currency(total_debt)).classes('text-4xl font-bold text-red-600')
+                    ui.label('Total Outstanding Debt').classes('text-gray-600 text-center')
             
-            with ui.card().classes('flex-1 bg-purple-50'):
-                ui.label(format_currency(total_credit)).classes('text-4xl font-bold text-purple-600')
-                ui.label('Total Credit').classes('text-gray-600')
+            with ui.card().classes('flex-1 bg-purple-50 h-40 flex items-center justify-center'):
+                with ui.column().classes('items-center'):
+                    ui.label(format_currency(total_credit)).classes('text-4xl font-bold text-purple-600')
+                    ui.label('Total Credit').classes('text-gray-600')
+            
+            # Silver price card - 5th card in same row with same height
+            silver_card = ui.card().classes('flex-1 bg-amber-50 h-40')
+            
+            def refresh_silver_price():
+                """Refresh the silver price display"""
+                # Clear cache to force fresh fetch
+                import os
+                cache_file = "silver_price_cache.json"
+                if os.path.exists(cache_file):
+                    os.remove(cache_file)
+                
+                # Re-render the entire page
+                ui.navigate.to('/')
+                ui.notify('Silver price updated!', type='positive')
+            
+            with silver_card:
+                with ui.column().classes('items-center justify-center h-full'):
+                    # Fetch silver price
+                    silver_price = silver_fetcher.get_price()
+                    
+                    # Only show price if it's a real retrieved price (not fallback/estimate)
+                    if silver_price and not silver_price.get('is_fallback'):
+                        ui.label(f"£{silver_price['price_per_gram']:.3f}").classes('text-4xl font-bold text-amber-600')
+                        ui.label('Silver Price (per gram)').classes('text-gray-600 text-sm')
+                        
+                        # Timestamp and refresh button
+                        timestamp = datetime.fromisoformat(silver_price['timestamp'])
+                        time_str = timestamp.strftime('%d/%m/%y')
+                        
+                        ui.label(f"Updated: {time_str}").classes('text-xs text-gray-500 mt-1')
+                        
+                        # Refresh button
+                        ui.button('🔄 Refresh', on_click=refresh_silver_price).props('flat dense size=sm').classes('mt-1 text-xs')
+                    else:
+                        # Show message when price cannot be retrieved
+                        ui.label('Silver Price').classes('text-xl font-bold text-amber-600')
+                        ui.label('Unable to fetch price').classes('text-gray-500 text-sm mt-2')
+                        ui.button('🔄 Try Again', on_click=refresh_silver_price).props('flat dense size=sm').classes('mt-2 text-xs')
         
         # Quick action buttons
         with ui.row().classes('w-full max-w-6xl gap-4 mb-8'):
