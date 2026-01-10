@@ -82,6 +82,10 @@ class Database:
         if 'pricing_type' not in columns:
             cursor.execute("ALTER TABLE materials ADD COLUMN pricing_type TEXT DEFAULT 'fixed'")
         
+        # Add weight_per_unit column if it doesn't exist (for weight-based items like jump rings)
+        if 'weight_per_unit' not in columns:
+            cursor.execute("ALTER TABLE materials ADD COLUMN weight_per_unit REAL")
+        
         # Projects table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS projects (
@@ -356,15 +360,15 @@ class Database:
     def add_material(self, name: str, category: str, unit_type: str, base_price: float,
                      pack_quantity: float = 1, markup_percentage: float = 0, 
                      supplier: str = "Cooksongold", supplier_url: str = "", notes: str = "", 
-                     is_active: bool = True, pricing_type: str = "fixed") -> int:
-        """Add a new material with pricing type ('fixed' or 'per_kg')"""
+                     is_active: bool = True, pricing_type: str = "fixed", weight_per_unit: float = None) -> int:
+        """Add a new material with pricing type ('fixed' or 'per_kg') and optional weight_per_unit"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(
-                '''INSERT INTO materials (name, category, unit_type, base_price, pack_quantity, markup_percentage, supplier, supplier_url, notes, is_active, pricing_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                (name, category, unit_type, base_price, pack_quantity, markup_percentage, supplier, supplier_url, notes, 1 if is_active else 0, pricing_type)
+                '''INSERT INTO materials (name, category, unit_type, base_price, pack_quantity, markup_percentage, supplier, supplier_url, notes, is_active, pricing_type, weight_per_unit)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (name, category, unit_type, base_price, pack_quantity, markup_percentage, supplier, supplier_url, notes, 1 if is_active else 0, pricing_type, weight_per_unit)
             )
             material_id = cursor.lastrowid
             conn.commit()
@@ -376,16 +380,39 @@ class Database:
             conn.close()
     
     def get_material_final_price(self, material_id: int) -> float:
-        """Calculate the final price per unit with markup"""
+        """Calculate the final price per unit with markup
+        
+        Three pricing types:
+        1. 'fixed': Standard pack/item pricing
+            - base_price is pack price
+            - price_per_item = base_price / pack_quantity
+            
+        2. 'per_kg': Bulk weight pricing (e.g., sheet silver sold per gram)
+            - base_price is price per gram
+            - Not typically used for individual items
+            
+        3. 'per_kg_item': Individual items sold by weight (e.g., jump rings)
+            - base_price is price per gram from supplier
+            - weight_per_unit is grams per single item
+            - price_per_item = base_price * weight_per_unit
+        """
         material = self.get_material(material_id)
         if not material:
             return 0.0
+        
+        pricing_type = material.get('pricing_type', 'fixed')
         base_price = material['base_price']
-        pack_quantity = material.get('pack_quantity', 1)
         markup = material.get('markup_percentage', 0)
         
-        # Calculate price per individual item
-        price_per_item = base_price / pack_quantity if pack_quantity > 0 else base_price
+        # Calculate price per individual item based on pricing type
+        if pricing_type == 'per_kg_item' and material.get('weight_per_unit'):
+            # Item weight-based: price_per_gram * grams_per_item
+            weight_per_unit = material['weight_per_unit']
+            price_per_item = base_price * weight_per_unit
+        else:
+            # Fixed price or bulk per_kg: divide pack price by quantity
+            pack_quantity = material.get('pack_quantity', 1)
+            price_per_item = base_price / pack_quantity if pack_quantity > 0 else base_price
         
         # Apply markup
         return price_per_item * (1 + markup / 100)
@@ -424,16 +451,16 @@ class Database:
     def update_material(self, material_id: int, name: str, category: str, unit_type: str, 
                        base_price: float, pack_quantity: float = 1, markup_percentage: float = 0,
                        supplier: str = "", supplier_url: str = "", notes: str = "", 
-                       is_active: bool = True, pricing_type: str = "fixed"):
-        """Update material information with pricing type"""
+                       is_active: bool = True, pricing_type: str = "fixed", weight_per_unit: float = None):
+        """Update material information with pricing type and optional weight_per_unit"""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute(
             '''UPDATE materials SET name = ?, category = ?, unit_type = ?, base_price = ?,
                pack_quantity = ?, markup_percentage = ?, supplier = ?, supplier_url = ?, 
-               notes = ?, is_active = ?, pricing_type = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?''',
+               notes = ?, is_active = ?, pricing_type = ?, weight_per_unit = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?''',
             (name, category, unit_type, base_price, pack_quantity, markup_percentage, 
-             supplier, supplier_url, notes, 1 if is_active else 0, pricing_type, material_id)
+             supplier, supplier_url, notes, 1 if is_active else 0, pricing_type, weight_per_unit, material_id)
         )
         conn.commit()
         conn.close()
@@ -606,12 +633,19 @@ class Database:
             raise ValueError(f"Material with id {material_id} not found")
         
         # Calculate final price per individual item with markup
+        pricing_type = material.get('pricing_type', 'fixed')
         base_price = material['base_price']
-        pack_quantity = material.get('pack_quantity', 1)
         markup = material.get('markup_percentage', 0)
         
-        # Price per individual item
-        price_per_item = base_price / pack_quantity if pack_quantity > 0 else base_price
+        # Calculate price per individual item based on pricing type
+        if pricing_type == 'per_kg_item' and material.get('weight_per_unit'):
+            # Weight-based: price_per_gram * grams_per_item
+            weight_per_unit = material['weight_per_unit']
+            price_per_item = base_price * weight_per_unit
+        else:
+            # Fixed price: divide pack price by quantity
+            pack_quantity = material.get('pack_quantity', 1)
+            price_per_item = base_price / pack_quantity if pack_quantity > 0 else base_price
         
         # Apply markup
         unit_price = price_per_item * (1 + markup / 100)
@@ -688,12 +722,19 @@ class Database:
             raise ValueError(f"Material with id {material_id} not found")
         
         # Calculate final price per individual item with markup
+        pricing_type = material.get('pricing_type', 'fixed')
         base_price = material['base_price']
-        pack_quantity = material.get('pack_quantity', 1)
         markup = material.get('markup_percentage', 0)
         
-        # Price per individual item
-        price_per_item = base_price / pack_quantity if pack_quantity > 0 else base_price
+        # Calculate price per individual item based on pricing type
+        if pricing_type == 'per_kg_item' and material.get('weight_per_unit'):
+            # Weight-based: price_per_gram * grams_per_item
+            weight_per_unit = material['weight_per_unit']
+            price_per_item = base_price * weight_per_unit
+        else:
+            # Fixed price: divide pack price by quantity
+            pack_quantity = material.get('pack_quantity', 1)
+            price_per_item = base_price / pack_quantity if pack_quantity > 0 else base_price
         
         # Apply markup
         unit_price = price_per_item * (1 + markup / 100)

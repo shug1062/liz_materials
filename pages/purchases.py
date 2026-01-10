@@ -56,19 +56,34 @@ def purchases_page():
                     material_id = material_options[material_select.value]
                     material = db.get_material(material_id)
                     
-                    # Calculate prices with pack quantity consideration
+                    # Calculate prices with pack quantity consideration and pricing type
+                    pricing_type = material.get('pricing_type', 'fixed')
                     base_price = material['base_price']
                     pack_qty = material.get('pack_quantity', 1)
                     markup = material.get('markup_percentage', 0)
                     
-                    # Calculate per-item prices
-                    price_per_item = base_price / pack_qty if pack_qty > 0 else base_price
+                    # Calculate per-item prices based on pricing type
+                    if pricing_type == 'per_kg_item' and material.get('weight_per_unit'):
+                        # Item weight-based: price_per_gram * grams_per_item
+                        price_per_item = base_price * material['weight_per_unit']
+                    else:
+                        # Fixed or bulk per_kg: divide pack price by quantity
+                        price_per_item = base_price / pack_qty if pack_qty > 0 else base_price
+                    
                     final_price_per_item = price_per_item * (1 + markup / 100)
                     
                     unit_label.text = f"Unit: {material['unit_type']}"
                     
                     # Show pack information if applicable (without markup details)
-                    if pack_qty > 1:
+                    if pricing_type == 'per_kg_item':
+                        # Show weight-based pricing info
+                        weight = material.get('weight_per_unit', 0)
+                        price_label.text = (
+                            f"{format_currency(base_price)}/g × {weight}g = "
+                            f"{format_currency(price_per_item)}/item | "
+                            f"Price: {format_currency(final_price_per_item)} per {material['unit_type']}"
+                        )
+                    elif pack_qty > 1:
                         price_label.text = (
                             f"Pack of {int(pack_qty)} @ {format_currency(base_price)} = "
                             f"{format_currency(price_per_item)}/item | "

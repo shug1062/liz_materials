@@ -3,7 +3,7 @@ from nicegui import ui
 from datetime import datetime
 from database import Database
 from utils import create_header, format_currency
-from price_scraper import get_material_price_from_url
+from price_scraper import get_material_price_from_url, scrape_weight_per_unit
 from ui_helpers import create_price_calculator
 
 db = Database()
@@ -110,20 +110,37 @@ def update_price_from_url(material, refresh_callback):
         pricing_type=pricing_type
     )
     
+    # If it's item weight-based pricing, also try to scrape weight per unit
+    weight_per_unit = None
+    if pricing_type == 'per_kg_item':
+        weight_per_unit = scrape_weight_per_unit(material['supplier_url'])
+    
     if new_price:
         # Update the base price in database
         old_price = material['base_price']
         markup = material.get('markup_percentage', 0)
         
-        db.update_material_price(
+        # Update the material with new price and potentially weight
+        db.update_material(
             material_id=material['id'],
-            new_base_price=new_price,
-            new_markup=markup
+            name=material['name'],
+            category=material['category'],
+            unit_type=material['unit_type'],
+            base_price=new_price,
+            pack_quantity=material.get('pack_quantity', 1),
+            markup_percentage=markup,
+            supplier=material['supplier'],
+            supplier_url=material['supplier_url'],
+            notes=material.get('notes', ''),
+            is_active=bool(material.get('is_active', 1)),
+            pricing_type=pricing_type,
+            weight_per_unit=weight_per_unit if weight_per_unit else material.get('weight_per_unit')
         )
         
         price_label = 'per g' if pricing_type == 'per_kg' else ''
+        weight_msg = f' | Weight: {weight_per_unit}g/unit' if weight_per_unit else ''
         ui.notify(
-            f'✅ Price updated! {format_currency(old_price)} → {format_currency(new_price)} {price_label}',
+            f'✅ Price updated! {format_currency(old_price)} → {format_currency(new_price)} {price_label}{weight_msg}',
             type='positive'
         )
         refresh_callback()
@@ -159,15 +176,59 @@ def show_add_material_dialog(refresh_callback):
         ui.label('Pricing Information').classes('text-sm font-bold text-gray-700 mt-2')
         
         pricing_type_select = ui.select(
-            ['Fixed Price', 'Per Gram (g)'],
+            ['Fixed Price', 'Per Gram (g)', 'Per Gram (item weight)'],
             label='Pricing Type',
             value='Fixed Price'
         ).classes('w-full')
-        ui.label('(Fixed: Standard per-item/pack price | Per g: Price shown per gram weight)').classes('text-xs text-gray-500 -mt-2')
+        ui.label('(Fixed: Standard pricing | Per g: Bulk weight | Per g (item weight): Items sold by weight)').classes('text-xs text-gray-500 -mt-2')
         
         price_input = ui.number('Pack/Supplier Price (£) *', min=0, step=0.01, precision=2).classes('w-full')
         pack_qty_input = ui.number('Items in Pack', min=1, step=1, precision=0, value=1).classes('w-full')
         ui.label('(Enter 1 if sold individually, or the pack size like 50)').classes('text-xs text-gray-500 -mt-2')
+        
+        # Weight per unit field (only for Per Gram pricing)
+        weight_container = ui.column().classes('w-full')
+        weight_input = None
+        
+        # Forward declaration of update function (will be defined later)
+        update_price_calculations_func = None
+        
+        def update_weight_visibility():
+            weight_container.clear()
+            nonlocal weight_input
+            if pricing_type_select.value == 'Per Gram (item weight)':
+                with weight_container:
+                    ui.label('Item Weight Information').classes('text-sm font-bold text-gray-700 mt-2')
+                    ui.label('For items sold by weight but used individually (e.g., jump rings)').classes('text-xs text-gray-500')
+                    weight_input = ui.number('Weight per Item (grams)', min=0, step=0.001, precision=4).classes('w-full')
+                    ui.label('(Weight of one individual item)').classes('text-xs text-gray-500 -mt-2')
+                    
+                    # Attach price calculator callback
+                    if update_price_calculations_func:
+                        weight_input.on('update:model-value', update_price_calculations_func)
+                    
+                    def fetch_weight():
+                        if not url_input.value:
+                            ui.notify('Please enter Supplier URL first', type='warning')
+                            return
+                        ui.notify('Fetching weight info...', type='info')
+                        weight = scrape_weight_per_unit(url_input.value)
+                        if weight:
+                            weight_input.value = weight
+                            if update_price_calculations_func:
+                                update_price_calculations_func()
+                            ui.notify(f'✅ Weight found: {weight}g per unit', type='positive')
+                        else:
+                            ui.notify('⚠️ Could not find weight info on page', type='warning')
+                    
+                    ui.button('🔍 Auto-fetch Weight from URL', on_click=fetch_weight).classes('w-full').props('color=purple flat')
+            else:
+                weight_input = None
+                if update_price_calculations_func:
+                    update_price_calculations_func()
+        
+        pricing_type_select.on('update:model-value', lambda: update_weight_visibility())
+        update_weight_visibility()  # Initial setup
         
         markup_input = ui.number('Markup Percentage (%)', min=0, max=1000, step=0.1, precision=1, value=0).classes('w-full')
         
@@ -176,15 +237,36 @@ def show_add_material_dialog(refresh_callback):
         price_per_item_label = ui.label('Price per item: £0.00').classes('text-sm text-gray-600')
         final_price_label = ui.label('Final Price per item: £0.00').classes('text-lg font-bold text-green-600')
         
-        # Use shared price calculator to avoid duplication
-        update_price_calculations = create_price_calculator(
-            price_input, pack_qty_input, markup_input,
-            price_per_item_label, final_price_label
-        )
+        # Custom price calculator that handles weight-based pricing
+        def update_price_calculations():
+            if price_input.value and pack_qty_input.value and markup_input.value is not None:
+                pack_price = price_input.value
+                pack_qty = pack_qty_input.value if pack_qty_input.value > 0 else 1
+                
+                # Check if weight-based pricing
+                pricing_type_value = pricing_type_select.value
+                
+                if pricing_type_value == 'Per Gram (item weight)' and weight_input and weight_input.value:
+                    # Weight-based: price_per_gram * grams_per_item
+                    price_per_item = pack_price * weight_input.value
+                else:
+                    # Fixed: divide pack price by quantity
+                    price_per_item = pack_price / pack_qty
+                
+                # Apply markup
+                final_per_item = price_per_item * (1 + markup_input.value / 100)
+                
+                # Update labels
+                price_per_item_label.text = f'Cost per item: {format_currency(price_per_item)}'
+                final_price_label.text = f'Final Price per item: {format_currency(final_per_item)}'
+        
+        # Make the function available to update_weight_visibility
+        update_price_calculations_func = update_price_calculations
         
         price_input.on('update:model-value', update_price_calculations)
         pack_qty_input.on('update:model-value', update_price_calculations)
         markup_input.on('update:model-value', update_price_calculations)
+        pricing_type_select.on('update:model-value', update_price_calculations)
         
         ui.separator()
         supplier_input = ui.input('Supplier', value='Cooksongold').classes('w-full')
@@ -200,7 +282,14 @@ def show_add_material_dialog(refresh_callback):
                     return
                 
                 pack_qty = pack_qty_input.value if pack_qty_input.value and pack_qty_input.value > 0 else 1
-                pricing_type = 'per_kg' if pricing_type_select.value == 'Per Gram (g)' else 'fixed'
+                
+                # Map UI pricing type to database pricing type
+                if pricing_type_select.value == 'Per Gram (g)':
+                    pricing_type = 'per_kg'
+                elif pricing_type_select.value == 'Per Gram (item weight)':
+                    pricing_type = 'per_kg_item'
+                else:
+                    pricing_type = 'fixed'
                 
                 # Get category and normalize it to match existing categories (case-insensitive)
                 category_value = normalize_category(category_input.value or "", all_categories)
@@ -215,7 +304,8 @@ def show_add_material_dialog(refresh_callback):
                     supplier=supplier_input.value or "Cooksongold",
                     supplier_url=url_input.value or "",
                     notes=notes_input.value or "",
-                    pricing_type=pricing_type
+                    pricing_type=pricing_type,
+                    weight_per_unit=weight_input.value if weight_input and weight_input.value else None
                 )
                 ui.notify(f'Material {name_input.value} added!', type='positive')
                 dialog.close()
@@ -257,37 +347,120 @@ def show_edit_material_dialog(material, refresh_callback):
         ui.label('Pricing Information').classes('text-sm font-bold text-gray-700 mt-2')
         
         current_pricing_type = material.get('pricing_type', 'fixed')
+        
+        # Map database pricing type to UI label
+        if current_pricing_type == 'per_kg':
+            current_value = 'Per Gram (g)'
+        elif current_pricing_type == 'per_kg_item':
+            current_value = 'Per Gram (item weight)'
+        else:
+            current_value = 'Fixed Price'
+        
         pricing_type_select = ui.select(
-            ['Fixed Price', 'Per Gram (g)'],
+            ['Fixed Price', 'Per Gram (g)', 'Per Gram (item weight)'],
             label='Pricing Type',
-            value='Per Gram (g)' if current_pricing_type == 'per_kg' else 'Fixed Price'
+            value=current_value
         ).classes('w-full')
         
         price_input = ui.number('Pack/Supplier Price (£) *', min=0, step=0.01, precision=2, 
                                value=material['base_price']).classes('w-full')
         pack_qty_input = ui.number('Items in Pack', min=1, step=1, precision=0,
                                   value=material.get('pack_quantity', 1)).classes('w-full')
+        
+        # Weight per unit field (only shown for per_kg pricing)
+        weight_container = ui.column().classes('w-full')
+        weight_input = None
+        
+        # Forward declaration of update function (will be defined later)
+        update_price_calculations_func = None
+        
+        def update_weight_visibility():
+            nonlocal weight_input
+            weight_container.clear()
+            with weight_container:
+                if pricing_type_select.value == 'Per Gram (item weight)':
+                    weight_input = ui.number('Weight per Item (grams)', min=0, step=0.001, precision=4,
+                                            value=material.get('weight_per_unit')).classes('w-full')
+                    ui.label('(Weight of one individual item)').classes('text-xs text-gray-500 -mt-2')
+                    
+                    # Attach price calculator callback
+                    if update_price_calculations_func:
+                        weight_input.on('update:model-value', update_price_calculations_func)
+                    
+                    def fetch_weight():
+                        if not url_input.value:
+                            ui.notify('Please enter a supplier URL first', type='warning')
+                            return
+                        try:
+                            weight = scrape_weight_per_unit(url_input.value)
+                            if weight:
+                                weight_input.value = weight
+                                if update_price_calculations_func:
+                                    update_price_calculations_func()
+                                ui.notify(f'Weight fetched: {weight:.4f}g per item', type='positive')
+                            else:
+                                ui.notify('Could not find weight information on page', type='warning')
+                        except Exception as e:
+                            ui.notify(f'Error fetching weight: {str(e)}', type='negative')
+                    
+                    ui.button('🔍 Auto-fetch Weight from URL', on_click=fetch_weight).props('flat color=purple')
+                else:
+                    weight_input = None
+                    if update_price_calculations_func:
+                        update_price_calculations_func()
+        
+        update_weight_visibility()
+        pricing_type_select.on('update:model-value', lambda: update_weight_visibility())
+        
         markup_input = ui.number('Markup Percentage (%)', min=0, max=1000, step=0.1, precision=1,
                                 value=material.get('markup_percentage', 0)).classes('w-full')
         
         # Show price calculations
         ui.separator()
         pack_qty = material.get('pack_quantity', 1)
-        price_per_item = material['base_price'] / pack_qty if pack_qty > 0 else material['base_price']
+        
+        # Calculate initial price per item based on pricing type
+        pricing_type = material.get('pricing_type', 'fixed')
+        if pricing_type == 'per_kg_item' and material.get('weight_per_unit'):
+            price_per_item = material['base_price'] * material['weight_per_unit']
+        else:
+            price_per_item = material['base_price'] / pack_qty if pack_qty > 0 else material['base_price']
+        
         final_per_item = price_per_item * (1 + material.get('markup_percentage', 0) / 100)
         
         price_per_item_label = ui.label(f'Cost per item: {format_currency(price_per_item)}').classes('text-sm text-gray-600')
         final_price_label = ui.label(f'Final Price per item: {format_currency(final_per_item)}').classes('text-lg font-bold text-green-600')
         
-        # Use shared price calculator to avoid duplication
-        update_price_calculations = create_price_calculator(
-            price_input, pack_qty_input, markup_input,
-            price_per_item_label, final_price_label
-        )
+        # Custom price calculator that handles weight-based pricing
+        def update_price_calculations():
+            if price_input.value and pack_qty_input.value and markup_input.value is not None:
+                pack_price = price_input.value
+                pack_qty = pack_qty_input.value if pack_qty_input.value > 0 else 1
+                
+                # Check if weight-based pricing
+                pricing_type_value = pricing_type_select.value
+                
+                if pricing_type_value == 'Per Gram (item weight)' and weight_input and weight_input.value:
+                    # Weight-based: price_per_gram * grams_per_item
+                    price_per_item = pack_price * weight_input.value
+                else:
+                    # Fixed: divide pack price by quantity
+                    price_per_item = pack_price / pack_qty
+                
+                # Apply markup
+                final_per_item = price_per_item * (1 + markup_input.value / 100)
+                
+                # Update labels
+                price_per_item_label.text = f'Cost per item: {format_currency(price_per_item)}'
+                final_price_label.text = f'Final Price per item: {format_currency(final_per_item)}'
+        
+        # Make the function available to update_weight_visibility
+        update_price_calculations_func = update_price_calculations
         
         price_input.on('update:model-value', update_price_calculations)
         pack_qty_input.on('update:model-value', update_price_calculations)
         markup_input.on('update:model-value', update_price_calculations)
+        pricing_type_select.on('update:model-value', update_price_calculations)
         
         ui.separator()
         supplier_input = ui.input('Supplier', value=material['supplier']).classes('w-full')
@@ -303,7 +476,14 @@ def show_edit_material_dialog(material, refresh_callback):
                     return
                 
                 pack_qty = pack_qty_input.value if pack_qty_input.value and pack_qty_input.value > 0 else 1
-                pricing_type = 'per_kg' if pricing_type_select.value == 'Per Gram (g)' else 'fixed'
+                
+                # Map UI pricing type to database pricing type
+                if pricing_type_select.value == 'Per Gram (g)':
+                    pricing_type = 'per_kg'
+                elif pricing_type_select.value == 'Per Gram (item weight)':
+                    pricing_type = 'per_kg_item'
+                else:
+                    pricing_type = 'fixed'
                 
                 # Get category and normalize it to match existing categories (case-insensitive)
                 category_value = normalize_category(category_input.value or "", existing_categories)
@@ -319,7 +499,8 @@ def show_edit_material_dialog(material, refresh_callback):
                     supplier=supplier_input.value,
                     supplier_url=url_input.value or "",
                     notes=notes_input.value or "",
-                    pricing_type=pricing_type
+                    pricing_type=pricing_type,
+                    weight_per_unit=weight_input.value if weight_input and weight_input.value else None
                 )
                 ui.notify(f'Material {name_input.value} updated! Category: {category_value}', type='positive')
                 dialog.close()
@@ -482,6 +663,8 @@ def render_material_row(material, refresh_callback):
     pricing_type = material.get('pricing_type', 'fixed')
     if pricing_type == 'per_kg':
         ui.label('Per g').classes('text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded')
+    elif pricing_type == 'per_kg_item':
+        ui.label('Per g (item)').classes('text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded')
     else:
         ui.label('Fixed').classes('text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded')
     
@@ -495,8 +678,14 @@ def render_material_row(material, refresh_callback):
     else:
         ui.label('-').classes('text-gray-400')
     
-    # Price per individual item (base)
-    price_per_item = material['base_price'] / pack_qty if pack_qty > 0 else material['base_price']
+    # Price per individual item (base) - handle weight-based pricing
+    pricing_type = material.get('pricing_type', 'fixed')
+    if pricing_type == 'per_kg_item' and material.get('weight_per_unit'):
+        # Item weight-based: price_per_gram * grams_per_item
+        price_per_item = material['base_price'] * material['weight_per_unit']
+    else:
+        # Fixed price or bulk per_kg: divide pack price by quantity
+        price_per_item = material['base_price'] / pack_qty if pack_qty > 0 else material['base_price']
     ui.label(format_currency(price_per_item)).classes('text-sm text-gray-600')
     
     # Markup

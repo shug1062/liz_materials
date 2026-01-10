@@ -43,3 +43,4 @@ silver_price_cache.json
 pages/__pycache__/*
 pages/__pycache__/dashboard.cpython-313.pyc
 pages/__pycache__/students.cpython-313.pyc
+pages/__pycache__/materials.cpython-313.pyc

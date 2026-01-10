@@ -191,3 +191,75 @@ def get_material_price_from_url(url: str, use_vat: bool = True, pricing_type: st
             return prices['inc_vat'] if use_vat else prices['exc_vat']
     
     return None
+
+
+def scrape_weight_per_unit(url: str) -> Optional[float]:
+    """
+    Scrape the weight per unit information from product pages.
+    
+    This function looks for weight specifications on product pages, particularly
+    for items like jump rings that are sold by weight but used individually.
+    
+    Looks for patterns like:
+    - "Approx. weight of 100 jump rings is 12.7g"
+    - "Weight per 100: 8.5g"
+    - "100 pieces weigh approximately 15.2g"
+    
+    Args:
+        url: The supplier product page URL
+    
+    Returns:
+        Weight in grams per single unit (not per 100), or None if not found
+        
+    Example:
+        >>> scrape_weight_per_unit("https://www.cooksongold.com/.../Jump-Ring/...")
+        0.127  # 12.7g / 100 = 0.127g per ring
+    """
+    try:
+        headers = {'User-Agent': USER_AGENT}
+        
+        response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT, verify=False)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Get all text from the page
+        page_text = soup.get_text()
+        
+        # Pattern 1: "Approx. weight of 100 [items] is X.Xg"
+        match = re.search(r'(?:approx(?:imate)?\.?\s+)?weight\s+(?:of\s+)?100\s+(?:\w+\s+)?(?:is\s+)?(\d+\.?\d*)\s*g', page_text, re.IGNORECASE)
+        if match:
+            weight_per_100 = float(match.group(1))
+            return weight_per_100 / 100  # Convert to per single unit
+        
+        # Pattern 2: "Weight per 100: X.Xg"
+        match = re.search(r'weight\s+per\s+100[:\s]+(\d+\.?\d*)\s*g', page_text, re.IGNORECASE)
+        if match:
+            weight_per_100 = float(match.group(1))
+            return weight_per_100 / 100
+        
+        # Pattern 3: "100 pieces weigh approximately X.Xg"
+        match = re.search(r'100\s+(?:pieces|items|rings|units)\s+weigh\s+(?:approx(?:imately)?\.?\s+)?(\d+\.?\d*)\s*g', page_text, re.IGNORECASE)
+        if match:
+            weight_per_100 = float(match.group(1))
+            return weight_per_100 / 100
+        
+        # Pattern 4: Look in bullet points or lists for weight info
+        # This catches formats in structured lists
+        list_items = soup.find_all(['li', 'td', 'dd'])
+        for item in list_items:
+            text = item.get_text()
+            match = re.search(r'(?:weight|approx).*?100.*?(\d+\.?\d*)\s*g', text, re.IGNORECASE)
+            if match:
+                weight_per_100 = float(match.group(1))
+                return weight_per_100 / 100
+        
+        print(f"Info: No weight per unit information found for URL: {url}")
+        return None
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching URL {url}: {e}")
+        return None
+    except Exception as e:
+        print(f"Error parsing weight info from {url}: {e}")
+        return None
