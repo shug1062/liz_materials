@@ -9,6 +9,26 @@ from ui_helpers import create_price_calculator
 db = Database()
 
 
+def normalize_category(category_input: str, existing_categories: list) -> str:
+    """
+    Normalize category name to match existing category (case-insensitive).
+    If a matching category exists, return it. Otherwise return the input as-is.
+    """
+    if not category_input:
+        return ""
+    
+    # Strip whitespace
+    category_input = category_input.strip()
+    
+    # Check if there's an existing category that matches case-insensitively
+    for existing in existing_categories:
+        if existing.lower() == category_input.lower():
+            return existing  # Return the existing category with its original case
+    
+    # No match found, return the input (will create new category)
+    return category_input
+
+
 # ============ ACTION FUNCTIONS (Extracted from nested scope) ============
 
 def toggle_material_status(material, refresh_callback):
@@ -182,8 +202,8 @@ def show_add_material_dialog(refresh_callback):
                 pack_qty = pack_qty_input.value if pack_qty_input.value and pack_qty_input.value > 0 else 1
                 pricing_type = 'per_kg' if pricing_type_select.value == 'Per Gram (g)' else 'fixed'
                 
-                # Get category directly from input
-                category_value = category_input.value or ""
+                # Get category and normalize it to match existing categories (case-insensitive)
+                category_value = normalize_category(category_input.value or "", all_categories)
                 
                 db.add_material(
                     name=name_input.value,
@@ -285,8 +305,8 @@ def show_edit_material_dialog(material, refresh_callback):
                 pack_qty = pack_qty_input.value if pack_qty_input.value and pack_qty_input.value > 0 else 1
                 pricing_type = 'per_kg' if pricing_type_select.value == 'Per Gram (g)' else 'fixed'
                 
-                # Get category value directly from input
-                category_value = category_input.value or ""
+                # Get category and normalize it to match existing categories (case-insensitive)
+                category_value = normalize_category(category_input.value or "", existing_categories)
                 
                 db.update_material(
                     material_id=material['id'],
