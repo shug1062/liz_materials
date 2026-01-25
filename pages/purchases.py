@@ -3,25 +3,56 @@ from nicegui import ui
 from database import Database
 from utils import create_header, format_currency
 from datetime import date
+from typing import Optional
+from urllib.parse import quote
 
 db = Database()
 
 
-def purchases_page():
+def purchases_page(
+    selected_class: Optional[str] = None,
+    selected_student_id: Optional[int] = None,
+    return_to: Optional[str] = None,
+):
     """Record new purchase page"""
     create_header()
     
     with ui.column().classes('w-full items-center p-4'):
-        ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat').classes('self-start')
+        with ui.row().classes('w-full max-w-2xl items-center gap-2'):
+            # When both are available, show both options.
+            if selected_student_id is not None:
+                ui.button(
+                    '← Back to Student',
+                    on_click=lambda s_id=selected_student_id: ui.navigate.to(f'/student/{s_id}')
+                ).props('flat')
+
+            if selected_class:
+                encoded_class = quote(selected_class)
+                ui.button(
+                    '← Back to Students',
+                    on_click=lambda cn=encoded_class: ui.navigate.to(f'/students?class_name={cn}')
+                ).props('flat')
+
+            if selected_student_id is None and not selected_class:
+                ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat')
+
+        if selected_class:
+            ui.label(f'Class: {selected_class}').classes('w-full max-w-2xl text-sm text-gray-600')
         
         with ui.card().classes('w-full max-w-2xl'):
             ui.label('Record New Purchase').classes('text-2xl font-bold mb-4')
             
             students = db.get_all_students()
             materials = db.get_active_materials()  # Only show active materials
+
+            if selected_class:
+                students = [s for s in students if (s.get('class_name') or 'No Class Assigned') == selected_class]
             
             if not students:
-                ui.label('Please add students first').classes('text-red-600')
+                if selected_class:
+                    ui.label('No students found in this class').classes('text-red-600')
+                else:
+                    ui.label('Please add students first').classes('text-red-600')
                 return
             
             if not materials:
@@ -30,6 +61,15 @@ def purchases_page():
             
             student_options = {s['name']: s['id'] for s in students}
             student_select = ui.select(list(student_options.keys()), label='Student *').classes('w-full')
+
+            if selected_student_id is not None:
+                # Preselect student if present in the options
+                preselected_name = next(
+                    (name for name, s_id in student_options.items() if s_id == selected_student_id),
+                    None,
+                )
+                if preselected_name:
+                    student_select.value = preselected_name
             
             # Project selection - show all projects since they're now independent
             all_projects = db.get_all_projects()
@@ -125,6 +165,12 @@ def purchases_page():
                 )
                 
                 ui.notify('Purchase recorded successfully!', type='positive')
-                ui.navigate.to(f'/student/{student_id}')
+                if return_to == 'student' and selected_student_id is not None:
+                    ui.navigate.to(f'/student/{selected_student_id}')
+                elif selected_class:
+                    encoded_class = quote(selected_class)
+                    ui.navigate.to(f'/students?class_name={encoded_class}')
+                else:
+                    ui.navigate.to(f'/student/{student_id}')
             
             ui.button('Record Purchase', on_click=record_purchase).classes('w-full mt-4')

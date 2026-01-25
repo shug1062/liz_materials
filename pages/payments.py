@@ -3,24 +3,55 @@ from nicegui import ui
 from database import Database
 from utils import create_header, format_currency
 from datetime import date
+from typing import Optional
+from urllib.parse import quote
 
 db = Database()
 
 
-def payments_page():
+def payments_page(
+    selected_class: Optional[str] = None,
+    selected_student_id: Optional[int] = None,
+    return_to: Optional[str] = None,
+):
     """Record payment page"""
     create_header()
     
     with ui.column().classes('w-full items-center p-4'):
-        ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat').classes('self-start')
+        with ui.row().classes('w-full max-w-2xl items-center gap-2'):
+            # When both are available, show both options.
+            if selected_student_id is not None:
+                ui.button(
+                    '← Back to Student',
+                    on_click=lambda s_id=selected_student_id: ui.navigate.to(f'/student/{s_id}')
+                ).props('flat')
+
+            if selected_class:
+                encoded_class = quote(selected_class)
+                ui.button(
+                    '← Back to Students',
+                    on_click=lambda cn=encoded_class: ui.navigate.to(f'/students?class_name={cn}')
+                ).props('flat')
+
+            if selected_student_id is None and not selected_class:
+                ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat')
+
+        if selected_class:
+            ui.label(f'Class: {selected_class}').classes('w-full max-w-2xl text-sm text-gray-600')
         
         with ui.card().classes('w-full max-w-2xl'):
             ui.label('Record Payment').classes('text-2xl font-bold mb-4')
             
             students = db.get_all_students()
+
+            if selected_class:
+                students = [s for s in students if (s.get('class_name') or 'No Class Assigned') == selected_class]
             
             if not students:
-                ui.label('Please add students first').classes('text-red-600')
+                if selected_class:
+                    ui.label('No students found in this class').classes('text-red-600')
+                else:
+                    ui.label('Please add students first').classes('text-red-600')
                 return
             
             student_options = {s['name']: s['id'] for s in students}
@@ -46,6 +77,15 @@ def payments_page():
                         balance_label.classes('text-lg font-bold text-gray-600')
             
             student_select.on('update:model-value', update_balance)
+
+            if selected_student_id is not None:
+                preselected_name = next(
+                    (name for name, s_id in student_options.items() if s_id == selected_student_id),
+                    None,
+                )
+                if preselected_name:
+                    student_select.value = preselected_name
+                    update_balance()
             
             # Date input (defaults to today)
             date_input = ui.input('Date *', value=str(date.today())).props('type=date').classes('w-full')
@@ -71,6 +111,12 @@ def payments_page():
                 )
                 
                 ui.notify(f'Payment of {format_currency(amount_input.value)} recorded!', type='positive')
-                ui.navigate.to(f'/student/{student_id}')
+                if return_to == 'student' and selected_student_id is not None:
+                    ui.navigate.to(f'/student/{selected_student_id}')
+                elif selected_class:
+                    encoded_class = quote(selected_class)
+                    ui.navigate.to(f'/students?class_name={encoded_class}')
+                else:
+                    ui.navigate.to(f'/student/{student_id}')
             
             ui.button('Record Payment', on_click=record_payment).classes('w-full mt-4')

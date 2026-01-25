@@ -36,6 +36,25 @@ If the batch file doesn't work:
    ```
 3. Open browser to: http://localhost:8080
 
+## 🍎 macOS Installation
+
+### One-click (recommended)
+1. Open Terminal in the extracted folder
+2. Run (first time only):
+   ```bash
+   chmod +x start_app.command
+   ```
+3. Double-click `start_app.command`
+4. Open your browser to: http://localhost:8080
+
+### Manual
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 app_new.py
+```
+
 ## 📱 Accessing from Other Devices
 Once running, access from:
 - Same computer: http://localhost:8080

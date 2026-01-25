@@ -41,13 +41,13 @@ def projects():
 
 
 @ui.page('/purchases')
-def purchases():
-    purchases_page()
+def purchases(class_name: Optional[str] = None, student_id: Optional[int] = None, return_to: Optional[str] = None):
+    purchases_page(selected_class=class_name, selected_student_id=student_id, return_to=return_to)
 
 
 @ui.page('/payments')
-def payments():
-    payments_page()
+def payments(class_name: Optional[str] = None, student_id: Optional[int] = None, return_to: Optional[str] = None):
+    payments_page(selected_class=class_name, selected_student_id=student_id, return_to=return_to)
 
 
 # Run the app

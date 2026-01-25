@@ -47,13 +47,19 @@ A comprehensive web-based dashboard for tracking student purchases, materials, a
 
 1. **Install Required Packages**
    ```bash
-   pip install nicegui requests beautifulsoup4
+   pip install -r requirements.txt
    ```
 
 2. **Run the Application**
    ```bash
-   python app.py
+   python app_new.py
    ```
+
+   **macOS one-click option:**
+   ```bash
+   chmod +x start_app.command
+   ```
+   Then double-click `start_app.command`.
 
 3. **Access the Dashboard**
    - Open your web browser
@@ -134,7 +140,7 @@ All data is stored in `jewelry_business.db` in the same directory as the applica
 ## Customization
 
 ### Colors & Theme
-Edit the `COLORS` dictionary in `app.py` to customize the color scheme:
+Edit the `COLORS` dictionary in `utils.py` to customize the color scheme:
 ```python
 COLORS = {
     'primary': '#8B7355',    # Bronze/copper tone
@@ -145,7 +151,7 @@ COLORS = {
 ```
 
 ### Currency Symbol
-Change the currency symbol in the `format_currency` function in `app.py`:
+Change the currency symbol in the `format_currency` function in `utils.py`:
 ```python
 def format_currency(amount: float) -> str:
     return f"£{amount:.2f}"  # Change £ to your currency symbol
@@ -176,7 +182,7 @@ def format_currency(amount: float) -> str:
 ## Troubleshooting
 
 ### Port Already in Use
-If port 8080 is already in use, change it in `app.py`:
+If port 8080 is already in use, change it in `app_new.py`:
 ```python
 ui.run(title='Silver Jewellery Studio Tracker', port=8081, reload=False)
 ```
@@ -199,7 +205,7 @@ pip install --upgrade pip
 
 For issues or questions:
 1. Check the documentation above
-2. Review the code comments in `app.py` and `database.py`
+2. Review the code comments in `app_new.py` and `database.py`
 3. Ensure all dependencies are installed correctly
 
 ## License

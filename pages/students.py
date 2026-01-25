@@ -4,6 +4,7 @@ from datetime import datetime
 from database import Database
 from utils import create_header, format_currency
 from typing import Optional
+from urllib.parse import quote
 
 db = Database()
 
@@ -94,7 +95,24 @@ def students_page(selected_class: Optional[str] = None):
                                         ui.label(f"Total Purchases: {format_currency(balance['total_purchases'])}").classes('text-sm text-gray-600')
                                         ui.label(f"Total Payments: {format_currency(balance['total_payments'])}").classes('text-sm text-gray-600')
                                     
-                                    ui.button('View Details', on_click=lambda s_id=student['id']: ui.navigate.to(f'/student/{s_id}'))
+                                    with ui.row().classes('gap-2'):
+                                        encoded_class = quote(class_name)
+                                        ui.button(
+                                            '🛒 Purchase',
+                                            on_click=lambda s_id=student['id'], cn=encoded_class: ui.navigate.to(
+                                                f'/purchases?student_id={s_id}&class_name={cn}&return_to=students'
+                                            )
+                                        ).props('outline').classes('min-w-[120px]')
+                                        ui.button(
+                                            '💷 Payment',
+                                            on_click=lambda s_id=student['id'], cn=encoded_class: ui.navigate.to(
+                                                f'/payments?student_id={s_id}&class_name={cn}&return_to=students'
+                                            )
+                                        ).props('outline color=green').classes('min-w-[120px]')
+                                        ui.button(
+                                            'View Details',
+                                            on_click=lambda s_id=student['id']: ui.navigate.to(f'/student/{s_id}')
+                                        )
         
         refresh_students()
         
@@ -312,6 +330,19 @@ def student_detail_page(student_id: int):
                         ui.label(f"Notes: {student['notes']}").classes('text-gray-600 mt-2')
                 
                 with ui.row().classes('gap-2'):
+                    encoded_class = quote(student.get('class_name') or 'No Class Assigned')
+                    ui.button(
+                        '🛒 Record Purchase',
+                        on_click=lambda s_id=student_id, cn=encoded_class: ui.navigate.to(
+                            f'/purchases?student_id={s_id}&class_name={cn}&return_to=student'
+                        )
+                    ).props('outline')
+                    ui.button(
+                        '💷 Record Payment',
+                        on_click=lambda s_id=student_id, cn=encoded_class: ui.navigate.to(
+                            f'/payments?student_id={s_id}&class_name={cn}&return_to=student'
+                        )
+                    ).props('outline color=green')
                     ui.button('✏️ Edit Details', on_click=lambda: show_edit_student_dialog(student)).props('outline')
                     ui.button('🗑️ Delete Student', on_click=show_delete_student_dialog).props('outline color=red')
         

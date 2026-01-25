@@ -15,6 +15,27 @@ Open browser to: **http://localhost:8080**
 
 ---
 
+## 🍎 macOS Quick Start
+
+### Option A: One-click launcher (recommended)
+1. Open Terminal in this folder
+2. Run (first time only):
+	```bash
+	chmod +x start_app.command
+	```
+3. Double-click `start_app.command`
+4. Open: **http://localhost:8080**
+
+### Option B: Manual
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 app_new.py
+```
+
+---
+
 ## 📌 Key Information
 
 | Item | Details |
