@@ -5,6 +5,7 @@ from database import Database
 from utils import create_header, format_currency
 from silver_price_fetcher import SilverPriceFetcher
 from urllib.parse import quote
+import os
 
 db = Database()
 silver_fetcher = SilverPriceFetcher()
@@ -51,42 +52,53 @@ def dashboard_page():
             
             # Silver price card - 5th card in same row with same height
             silver_card = ui.card().classes('flex-1 bg-amber-50 h-40')
-            
-            def refresh_silver_price():
-                """Refresh the silver price display"""
-                # Clear cache to force fresh fetch
-                import os
-                cache_file = "silver_price_cache.json"
-                if os.path.exists(cache_file):
-                    os.remove(cache_file)
-                
-                # Re-render the entire page
-                ui.navigate.to('/')
-                ui.notify('Silver price updated!', type='positive')
-            
-            with silver_card:
-                with ui.column().classes('items-center justify-center h-full'):
-                    # Fetch silver price
+
+            def _render_silver_content(container: ui.column):
+                container.clear()
+                with container:
+                    # Fetch silver price (cached or fresh)
                     silver_price = silver_fetcher.get_price()
-                    
-                    # Only show price if it's a real retrieved price (not fallback/estimate)
+
                     if silver_price and not silver_price.get('is_fallback'):
                         ui.label(f"£{silver_price['price_per_gram']:.3f}").classes('text-4xl font-bold text-amber-600')
                         ui.label('Silver Price (per gram)').classes('text-gray-600 text-sm')
-                        
-                        # Timestamp and refresh button
+
                         timestamp = datetime.fromisoformat(silver_price['timestamp'])
                         time_str = timestamp.strftime('%d/%m/%y')
-                        
                         ui.label(f"Updated: {time_str}").classes('text-xs text-gray-500 mt-1')
-                        
-                        # Refresh button
-                        ui.button('🔄 Refresh', on_click=refresh_silver_price).props('flat dense size=sm').classes('mt-1 text-xs')
+
+                        ui.button('🔄 Refresh', on_click=lambda: refresh_silver_price(force=True)).props('flat dense size=sm').classes('mt-1 text-xs')
                     else:
-                        # Show message when price cannot be retrieved
                         ui.label('Silver Price').classes('text-xl font-bold text-amber-600')
                         ui.label('Unable to fetch price').classes('text-gray-500 text-sm mt-2')
-                        ui.button('🔄 Try Again', on_click=refresh_silver_price).props('flat dense size=sm').classes('mt-2 text-xs')
+                        ui.button('🔄 Try Again', on_click=lambda: refresh_silver_price(force=True)).props('flat dense size=sm').classes('mt-2 text-xs')
+
+            def refresh_silver_price(force: bool = False, notify: bool = False):
+                """Refresh the silver price display.
+
+                - force=True clears cache and fetches fresh
+                - notify=True shows a success toast
+                """
+                if force:
+                    cache_file = "silver_price_cache.json"
+                    if os.path.exists(cache_file):
+                        os.remove(cache_file)
+                _render_silver_content(silver_content)
+                if notify:
+                    ui.notify('Silver price updated!', type='positive')
+            
+            with silver_card:
+                with ui.column().classes('items-center justify-center h-full'):
+                    silver_content = ui.column().classes('items-center justify-center h-full')
+                    _render_silver_content(silver_content)
+
+                    def _auto_refresh_if_needed():
+                        # If cache isn't valid for today, refresh the card.
+                        if silver_fetcher.get_cached_price() is None:
+                            refresh_silver_price(force=False, notify=False)
+
+                    # Check hourly while the dashboard is open.
+                    ui.timer(60 * 60, _auto_refresh_if_needed)
         
         # Class buttons section
         with ui.card().classes('w-full max-w-6xl'):

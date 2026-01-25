@@ -15,7 +15,11 @@ class SilverPriceFetcher:
         self.cooksongold_url = "https://www.cooksongold.com/Sheet/Sterling-Silver-Sheet-1.00mm-Fully-Annealed,-100-Recycled-Silver-prcode-CSA-100"
         
     def get_cached_price(self):
-        """Get price from cache if it's less than 24 hours old"""
+        """Get price from cache if it's from today.
+
+        Note: This uses the local calendar day rather than a rolling 24-hour window.
+        That matches the typical expectation of "refresh once per day".
+        """
         if not os.path.exists(self.cache_file):
             return None
         
@@ -24,7 +28,7 @@ class SilverPriceFetcher:
                 cache_data = json.load(f)
             
             cached_time = datetime.fromisoformat(cache_data['timestamp'])
-            if datetime.now() - cached_time < timedelta(hours=24):
+            if cached_time.date() == datetime.now().date():
                 return cache_data
             
         except Exception as e:
