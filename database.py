@@ -811,6 +811,55 @@ class Database:
         payments = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return payments
+
+    def get_all_payments(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        student_id: Optional[int] = None,
+    ) -> List[Dict]:
+        """Get all payments, optionally filtered by date range.
+
+        Args:
+            start_date: Inclusive start date in YYYY-MM-DD (local time).
+            end_date: Inclusive end date in YYYY-MM-DD (local time).
+
+        Returns:
+            List of payments joined with student_name and class_name.
+        """
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        query = (
+            "SELECT p.*, s.name as student_name, s.class_name as class_name "
+            "FROM payments p "
+            "JOIN students s ON s.id = p.student_id "
+        )
+
+        where_clauses = []
+        params: List[str] = []
+
+        if student_id is not None:
+            where_clauses.append("p.student_id = ?")
+            params.append(str(student_id))
+
+        if start_date:
+            where_clauses.append("DATE(p.payment_date) >= DATE(?)")
+            params.append(start_date)
+        if end_date:
+            where_clauses.append("DATE(p.payment_date) <= DATE(?)")
+            params.append(end_date)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+
+        query += " ORDER BY p.payment_date DESC"
+
+        cursor.execute(query, params)
+        payments = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return payments
     
     # ============ BALANCE CALCULATIONS ============
     

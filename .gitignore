@@ -41,3 +41,5 @@ database_backups*
 
 # Silver price cache
 silver_price_cache.json
+
+jewellery_tracker_deployment.zip

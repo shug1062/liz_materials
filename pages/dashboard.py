@@ -132,6 +132,7 @@ def dashboard_page():
             ui.button('Projects', on_click=lambda: ui.navigate.to('/projects')).classes('flex-1')
             ui.button('Record Purchase', on_click=lambda: ui.navigate.to('/purchases')).classes('flex-1')
             ui.button('Record Payment', on_click=lambda: ui.navigate.to('/payments')).classes('flex-1')
+            ui.button('View Payments', on_click=lambda: ui.navigate.to('/payments_report')).classes('flex-1')
         
         # Recent activity
         with ui.card().classes('w-full max-w-6xl'):
