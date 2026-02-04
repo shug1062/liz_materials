@@ -578,18 +578,75 @@ def show_reorder_categories_dialog(refresh_callback):
     dialog.open()
 
 
+def show_reorder_materials_dialog(category, refresh_callback):
+    """Show dialog to reorder materials within a specific category"""
+    materials = db.get_ordered_materials_in_category(category)
+    
+    if not materials:
+        ui.notify('No materials found in this category', type='warning')
+        return
+    
+    # Initialize the material order if not already set
+    material_ids = [m['id'] for m in materials]
+    db.set_material_order_in_category(category, material_ids)
+    
+    with ui.dialog() as dialog, ui.card().classes('w-96'):
+        ui.label(f'Reorder Materials in "{category}"').classes('text-xl font-bold mb-4')
+        ui.label('Use arrows to change the order of materials').classes('text-sm text-gray-600 mb-4')
+        
+        # Container for the material list
+        list_container = ui.column().classes('w-full gap-2')
+        
+        def render_list():
+            list_container.clear()
+            current_materials = db.get_ordered_materials_in_category(category)
+            
+            with list_container:
+                for idx, material in enumerate(current_materials):
+                    with ui.row().classes('w-full items-center gap-2 p-2 bg-gray-50 rounded'):
+                        ui.label(material['name']).classes('flex-grow')
+                        
+                        with ui.row().classes('gap-1'):
+                            # Up arrow
+                            if idx > 0:
+                                def move_up(mat_id=material['id']):
+                                    result = db.move_material_up(mat_id)
+                                    if result:
+                                        render_list()
+                                    else:
+                                        ui.notify('Could not move material up', type='warning')
+                                ui.button('↑', on_click=move_up).props('dense flat size=sm')
+                            else:
+                                ui.label('').classes('w-8')  # Spacer
+                            
+                            # Down arrow
+                            if idx < len(current_materials) - 1:
+                                def move_down(mat_id=material['id']):
+                                    result = db.move_material_down(mat_id)
+                                    if result:
+                                        render_list()
+                                    else:
+                                        ui.notify('Could not move material down', type='warning')
+                                ui.button('↓', on_click=move_down).props('dense flat size=sm')
+                            else:
+                                ui.label('').classes('w-8')  # Spacer
+        
+        render_list()
+        
+        with ui.row().classes('w-full justify-end gap-2 mt-4'):
+            def close_and_refresh():
+                dialog.close()
+                refresh_callback()
+            
+            ui.button('Done', on_click=close_and_refresh).props('color=primary')
+    
+    dialog.open()
+
+
+
 def render_materials_table(material_container, refresh_callback):
     """Render the materials table grouped by category"""
     material_container.clear()
-    materials = db.get_all_materials()
-    
-    # Group by category
-    categories = {}
-    for material in materials:
-        cat = material['category'] or 'Uncategorized'
-        if cat not in categories:
-            categories[cat] = []
-        categories[cat].append(material)
     
     # Get ordered categories
     ordered_categories = db.get_ordered_categories()
@@ -597,9 +654,14 @@ def render_materials_table(material_container, refresh_callback):
     with material_container:
         # Render ordered categories first
         for category in ordered_categories:
-            if category in categories:
-                items = categories[category]
-                ui.label(category).classes('text-2xl font-bold mt-4 mb-2')
+            # Get ordered materials for this category
+            items = db.get_ordered_materials_in_category(category)
+            
+            if items:  # Only show category if it has materials
+                with ui.row().classes('w-full items-center justify-between mb-2 mt-4'):
+                    ui.label(category).classes('text-2xl font-bold')
+                    ui.button('↕️ Reorder', 
+                             on_click=lambda cat=category: show_reorder_materials_dialog(cat, refresh_callback)).props('flat dense size=sm color=purple')
                 
                 with ui.grid(columns=10).classes('w-full gap-2 mb-4'):
                     # Header row
@@ -614,32 +676,9 @@ def render_materials_table(material_container, refresh_callback):
                     ui.label('Supplier').classes('font-bold')
                     ui.label('Actions').classes('font-bold')
                     
-                    # Material rows
+                    # Material rows (already ordered)
                     for material in items:
                         render_material_row(material, refresh_callback)
-        
-        # Render any remaining categories not in the custom order (alphabetically)
-        remaining_categories = sorted([cat for cat in categories.keys() if cat not in ordered_categories])
-        for category in remaining_categories:
-            items = categories[category]
-            ui.label(category).classes('text-2xl font-bold mt-4 mb-2')
-            
-            with ui.grid(columns=10).classes('w-full gap-2 mb-4'):
-                # Header row
-                ui.label('Name').classes('font-bold')
-                ui.label('Status').classes('font-bold')
-                ui.label('Pricing').classes('font-bold')
-                ui.label('Pack Price').classes('font-bold')
-                ui.label('Pack Qty').classes('font-bold')
-                ui.label('Price/Item').classes('font-bold')
-                ui.label('Markup %').classes('font-bold')
-                ui.label('Final Price/Item').classes('font-bold')
-                ui.label('Supplier').classes('font-bold')
-                ui.label('Actions').classes('font-bold')
-                
-                # Material rows
-                for material in items:
-                    render_material_row(material, refresh_callback)
 
 
 

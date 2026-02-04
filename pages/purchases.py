@@ -43,7 +43,7 @@ def purchases_page(
             ui.label('Record New Purchase').classes('text-2xl font-bold mb-4')
             
             students = db.get_all_students()
-            materials = db.get_active_materials()  # Only show active materials
+            materials = db.get_active_materials_ordered()  # Get active materials in proper order
 
             if selected_class:
                 students = [s for s in students if (s.get('class_name') or 'No Class Assigned') == selected_class]
@@ -81,8 +81,28 @@ def purchases_page(
             # Date input (defaults to today)
             date_input = ui.input('Date *', value=str(date.today())).props('type=date').classes('w-full')
             
+            # Get unique categories from materials
+            categories = sorted(set(m.get('category', 'Uncategorized') or 'Uncategorized' for m in materials))
+            category_filter = ui.select(['All Categories'] + categories, label='Filter by Category', value='All Categories').classes('w-full')
+            
+            # Material select - will be filtered by category
             material_options = {f"{m['name']} ({m['category']})": m['id'] for m in materials}
             material_select = ui.select(list(material_options.keys()), label='Material *').classes('w-full')
+            
+            def filter_materials():
+                """Filter materials based on selected category"""
+                if category_filter.value == 'All Categories':
+                    filtered_materials = materials
+                else:
+                    filtered_materials = [m for m in materials if (m.get('category') or 'Uncategorized') == category_filter.value]
+                
+                material_options.clear()
+                material_options.update({f"{m['name']} ({m['category']})": m['id'] for m in filtered_materials})
+                material_select.options = list(material_options.keys())
+                material_select.value = None
+                material_select.update()
+            
+            category_filter.on('update:model-value', lambda: filter_materials())
             
             quantity_input = ui.number('Quantity *', min=0, step=0.01, precision=2).classes('w-full')
             

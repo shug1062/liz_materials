@@ -151,6 +151,17 @@ class Database:
             )
         ''')
         
+        # Material order table - stores custom ordering of materials within categories
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS material_order (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                material_id INTEGER NOT NULL UNIQUE,
+                sort_order INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (material_id) REFERENCES materials (id)
+            )
+        ''')
+        
         # Create indexes for better query performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_student ON purchases(student_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_material ON purchases(material_id)')
@@ -441,6 +452,20 @@ class Database:
     def get_active_materials(self) -> List[Dict]:
         """Get only active materials (for purchase dropdown)"""
         return self.get_all_materials(include_inactive=False)
+    
+    def get_active_materials_ordered(self) -> List[Dict]:
+        """Get active materials in proper order (by category order, then material order within category)"""
+        ordered_categories = self.get_ordered_categories()
+        result = []
+        
+        for category in ordered_categories:
+            # Get ordered materials for this category
+            materials = self.get_ordered_materials_in_category(category)
+            # Filter to only active materials
+            active_materials = [m for m in materials if m.get('is_active', 1) == 1]
+            result.extend(active_materials)
+        
+        return result
     
     def get_material(self, material_id: int) -> Optional[Dict]:
         """Get a specific material"""
@@ -1184,3 +1209,185 @@ class Database:
             raise Exception(f"Failed to move category down: {e}")
         finally:
             conn.close()
+    
+    # ============ MATERIAL ORDERING ============
+    
+    def get_ordered_materials_in_category(self, category: str) -> List[Dict]:
+        """Get all materials in a category in their custom order"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all materials in this category
+        cursor.execute('''
+            SELECT * FROM materials 
+            WHERE category = ? OR (category IS NULL AND ? = 'Uncategorized')
+            ORDER BY name
+        ''', (category if category != 'Uncategorized' else None, category))
+        
+        all_materials = [dict(row) for row in cursor.fetchall()]
+        
+        # Get custom ordering for this category
+        cursor.execute('''
+            SELECT mo.material_id, mo.sort_order 
+            FROM material_order mo
+            JOIN materials m ON m.id = mo.material_id
+            WHERE m.category = ? OR (m.category IS NULL AND ? = 'Uncategorized')
+            ORDER BY mo.sort_order
+        ''', (category if category != 'Uncategorized' else None, category))
+        
+        ordered_ids = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        
+        # Build result: ordered materials first, then unordered ones alphabetically
+        result = []
+        material_dict = {m['id']: m for m in all_materials}
+        
+        # Add ordered materials
+        for mat_id in ordered_ids:
+            if mat_id in material_dict:
+                result.append(material_dict[mat_id])
+                del material_dict[mat_id]
+        
+        # Add remaining unordered materials alphabetically
+        remaining = sorted(material_dict.values(), key=lambda x: x['name'])
+        result.extend(remaining)
+        
+        return result
+    
+    def set_material_order_in_category(self, category: str, material_ids: List[int]):
+        """Set the order for materials in a specific category"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Delete existing order for materials in this category
+            if category == 'Uncategorized':
+                cursor.execute('''
+                    DELETE FROM material_order 
+                    WHERE material_id IN (
+                        SELECT id FROM materials WHERE category IS NULL
+                    )
+                ''')
+            else:
+                cursor.execute('''
+                    DELETE FROM material_order 
+                    WHERE material_id IN (
+                        SELECT id FROM materials WHERE category = ?
+                    )
+                ''', (category,))
+            
+            # Insert new order
+            for idx, material_id in enumerate(material_ids):
+                cursor.execute(
+                    'INSERT INTO material_order (material_id, sort_order) VALUES (?, ?)',
+                    (material_id, idx)
+                )
+            
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to set material order: {e}")
+        finally:
+            conn.close()
+    
+    def move_material_up(self, material_id: int) -> bool:
+        """Move a material up in the ordering within its category"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Get the material's category
+            cursor.execute('SELECT category FROM materials WHERE id = ?', (material_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            category = row[0]
+            
+            # Get current order for materials in this category
+            if category is None:
+                cursor.execute('''
+                    SELECT mo.material_id, mo.sort_order 
+                    FROM material_order mo
+                    JOIN materials m ON m.id = mo.material_id
+                    WHERE m.category IS NULL
+                    ORDER BY mo.sort_order
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT mo.material_id, mo.sort_order 
+                    FROM material_order mo
+                    JOIN materials m ON m.id = mo.material_id
+                    WHERE m.category = ?
+                    ORDER BY mo.sort_order
+                ''', (category,))
+            
+            ordered = [(row[0], row[1]) for row in cursor.fetchall()]
+            
+            # Find the material and swap with previous
+            for i, (mat_id, order) in enumerate(ordered):
+                if mat_id == material_id and i > 0:
+                    # Swap with previous
+                    prev_id, prev_order = ordered[i - 1]
+                    cursor.execute('UPDATE material_order SET sort_order = ? WHERE material_id = ?', (prev_order, material_id))
+                    cursor.execute('UPDATE material_order SET sort_order = ? WHERE material_id = ?', (order, prev_id))
+                    conn.commit()
+                    return True
+            
+            return False
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to move material up: {e}")
+        finally:
+            conn.close()
+    
+    def move_material_down(self, material_id: int) -> bool:
+        """Move a material down in the ordering within its category"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Get the material's category
+            cursor.execute('SELECT category FROM materials WHERE id = ?', (material_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            category = row[0]
+            
+            # Get current order for materials in this category
+            if category is None:
+                cursor.execute('''
+                    SELECT mo.material_id, mo.sort_order 
+                    FROM material_order mo
+                    JOIN materials m ON m.id = mo.material_id
+                    WHERE m.category IS NULL
+                    ORDER BY mo.sort_order
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT mo.material_id, mo.sort_order 
+                    FROM material_order mo
+                    JOIN materials m ON m.id = mo.material_id
+                    WHERE m.category = ?
+                    ORDER BY mo.sort_order
+                ''', (category,))
+            
+            ordered = [(row[0], row[1]) for row in cursor.fetchall()]
+            
+            # Find the material and swap with next
+            for i, (mat_id, order) in enumerate(ordered):
+                if mat_id == material_id and i < len(ordered) - 1:
+                    # Swap with next
+                    next_id, next_order = ordered[i + 1]
+                    cursor.execute('UPDATE material_order SET sort_order = ? WHERE material_id = ?', (next_order, material_id))
+                    cursor.execute('UPDATE material_order SET sort_order = ? WHERE material_id = ?', (order, next_id))
+                    conn.commit()
+                    return True
+            
+            return False
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to move material down: {e}")
+        finally:
+            conn.close()
+
