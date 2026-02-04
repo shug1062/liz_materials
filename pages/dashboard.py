@@ -29,11 +29,30 @@ def dashboard_page():
             total_debt = sum(abs(b['balance']) for b in balances if b['balance'] < 0)
             total_credit = sum(b['balance'] for b in balances if b['balance'] > 0)
             
-            # Summary cards - all with fixed height for consistency
+            # Get all payments and calculate cash/card totals
+            all_payments = db.get_all_payments()
+            cash_total = sum(
+                float(p.get('amount') or 0)
+                for p in all_payments
+                if (p.get('payment_method') or '').strip().lower() == 'cash'
+            )
+            card_total = sum(
+                float(p.get('amount') or 0)
+                for p in all_payments
+                if (p.get('payment_method') or '').strip().lower() == 'card'
+            )
+            
+            # Payment summary card - replaces Total Students
             with ui.card().classes('flex-1 bg-blue-50 h-40 flex items-center justify-center'):
-                with ui.column().classes('items-center'):
-                    ui.label(f'{len(students)}').classes('text-4xl font-bold text-blue-600')
-                    ui.label('Total Students').classes('text-gray-600')
+                with ui.column().classes('items-center gap-1'):
+                    ui.label('Payment Summary').classes('text-sm font-bold text-blue-600 mb-1')
+                    with ui.row().classes('gap-4'):
+                        with ui.column().classes('items-center'):
+                            ui.label(format_currency(cash_total)).classes('text-2xl font-bold text-blue-700')
+                            ui.label('Cash').classes('text-xs text-gray-600')
+                        with ui.column().classes('items-center'):
+                            ui.label(format_currency(card_total)).classes('text-2xl font-bold text-blue-700')
+                            ui.label('Card').classes('text-xs text-gray-600')
             
             with ui.card().classes('flex-1 bg-green-50 h-40 flex items-center justify-center'):
                 with ui.column().classes('items-center'):
@@ -134,28 +153,89 @@ def dashboard_page():
             ui.button('Record Payment', on_click=lambda: ui.navigate.to('/payments')).classes('flex-1')
             ui.button('View Payments', on_click=lambda: ui.navigate.to('/payments_report')).classes('flex-1')
         
-        # Recent activity
+        # Recent activity with tabs
         with ui.card().classes('w-full max-w-6xl'):
-            ui.label('Recent Purchases').classes('text-xl font-bold mb-4')
+            ui.label('Recent Activity').classes('text-xl font-bold mb-4')
             
-            purchases = db.get_all_purchases()[:10]  # Last 10 purchases
+            with ui.tabs().classes('w-full') as tabs:
+                purchases_tab = ui.tab('Recent Purchases')
+                payments_tab = ui.tab('Recent Payments')
+                cash_tab = ui.tab('Recent Cash Payments')
             
-            if purchases:
-                with ui.grid(columns=6).classes('w-full gap-2'):
-                    ui.label('Date').classes('font-bold')
-                    ui.label('Student').classes('font-bold')
-                    ui.label('Material').classes('font-bold')
-                    ui.label('Quantity').classes('font-bold')
-                    ui.label('Cost').classes('font-bold')
-                    ui.label('Project').classes('font-bold')
+            with ui.tab_panels(tabs, value=purchases_tab).classes('w-full'):
+                # Recent Purchases tab
+                with ui.tab_panel(purchases_tab):
+                    purchases = db.get_all_purchases()[:10]  # Last 10 purchases
                     
-                    for purchase in purchases:
-                        date = datetime.fromisoformat(purchase['purchase_date']).strftime('%d/%m/%Y')
-                        ui.label(date)
-                        ui.label(purchase['student_name'])
-                        ui.label(purchase['material_name'])
-                        ui.label(f"{purchase['quantity']:.2f} {purchase['unit_type']}")
-                        ui.label(format_currency(purchase['total_cost']))
-                        ui.label(purchase['project_name'] or '-')
-            else:
-                ui.label('No purchases recorded yet').classes('text-gray-500')
+                    if purchases:
+                        with ui.grid(columns=6).classes('w-full gap-2'):
+                            ui.label('Date').classes('font-bold')
+                            ui.label('Student').classes('font-bold')
+                            ui.label('Material').classes('font-bold')
+                            ui.label('Quantity').classes('font-bold')
+                            ui.label('Cost').classes('font-bold')
+                            ui.label('Project').classes('font-bold')
+                            
+                            for purchase in purchases:
+                                date = datetime.fromisoformat(purchase['purchase_date']).strftime('%d/%m/%Y')
+                                ui.label(date)
+                                ui.label(purchase['student_name'])
+                                ui.label(purchase['material_name'])
+                                ui.label(f"{purchase['quantity']:.2f} {purchase['unit_type']}")
+                                ui.label(format_currency(purchase['total_cost']))
+                                ui.label(purchase['project_name'] or '-')
+                    else:
+                        ui.label('No purchases recorded yet').classes('text-gray-500')
+                
+                # Recent Payments tab
+                with ui.tab_panel(payments_tab):
+                    payments = db.get_all_payments()[:10]  # Last 10 payments
+                    
+                    if payments:
+                        with ui.grid(columns=5).classes('w-full gap-2'):
+                            ui.label('Date').classes('font-bold')
+                            ui.label('Student').classes('font-bold')
+                            ui.label('Amount').classes('font-bold')
+                            ui.label('Method').classes('font-bold')
+                            ui.label('Notes').classes('font-bold')
+                            
+                            for payment in payments:
+                                raw_date = payment.get('payment_date') or ''
+                                try:
+                                    shown_date = datetime.fromisoformat(raw_date).strftime('%d/%m/%Y')
+                                except Exception:
+                                    shown_date = raw_date
+                                
+                                ui.label(shown_date)
+                                ui.label(payment.get('student_name') or '')
+                                ui.label(format_currency(float(payment.get('amount') or 0))).classes('font-bold text-green-700')
+                                ui.label(payment.get('payment_method') or '-')
+                                ui.label(payment.get('notes') or '-')
+                    else:
+                        ui.label('No payments recorded yet').classes('text-gray-500')
+                
+                # Recent Cash Payments tab
+                with ui.tab_panel(cash_tab):
+                    all_payments = db.get_all_payments()
+                    cash_payments = [p for p in all_payments if (p.get('payment_method') or '').strip().lower() == 'cash'][:10]
+                    
+                    if cash_payments:
+                        with ui.grid(columns=4).classes('w-full gap-2'):
+                            ui.label('Date').classes('font-bold')
+                            ui.label('Student').classes('font-bold')
+                            ui.label('Amount').classes('font-bold')
+                            ui.label('Notes').classes('font-bold')
+                            
+                            for payment in cash_payments:
+                                raw_date = payment.get('payment_date') or ''
+                                try:
+                                    shown_date = datetime.fromisoformat(raw_date).strftime('%d/%m/%Y')
+                                except Exception:
+                                    shown_date = raw_date
+                                
+                                ui.label(shown_date)
+                                ui.label(payment.get('student_name') or '')
+                                ui.label(format_currency(float(payment.get('amount') or 0))).classes('font-bold text-green-700')
+                                ui.label(payment.get('notes') or '-')
+                    else:
+                        ui.label('No cash payments recorded yet').classes('text-gray-500')
