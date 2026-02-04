@@ -242,22 +242,123 @@ def dashboard_page():
                     purchases = db.get_all_purchases()[:10]  # Last 10 purchases
                     
                     if purchases:
-                        with ui.grid(columns=6).classes('w-full gap-2'):
+                        with ui.grid(columns=8).classes('w-full gap-2'):
                             ui.label('Date').classes('font-bold')
                             ui.label('Student').classes('font-bold')
                             ui.label('Material').classes('font-bold')
                             ui.label('Quantity').classes('font-bold')
                             ui.label('Cost').classes('font-bold')
                             ui.label('Project').classes('font-bold')
+                            ui.label('Actions').classes('font-bold')
+                            ui.label('')  # Empty cell for layout
                             
                             for purchase in purchases:
-                                date = datetime.fromisoformat(purchase['purchase_date']).strftime('%d/%m/%Y')
-                                ui.label(date)
+                                purchase_date = datetime.fromisoformat(purchase['purchase_date']).strftime('%d/%m/%Y')
+                                ui.label(purchase_date)
                                 ui.label(purchase['student_name'])
                                 ui.label(purchase['material_name'])
                                 ui.label(f"{purchase['quantity']:.2f} {purchase['unit_type']}")
                                 ui.label(format_currency(purchase['total_cost']))
                                 ui.label(purchase['project_name'] or '-')
+                                
+                                # Action buttons
+                                def create_edit_purchase_handler(p):
+                                    def edit_handler():
+                                        with ui.dialog() as edit_dialog, ui.card().classes('w-96'):
+                                            ui.label('Edit Purchase').classes('text-xl font-bold mb-4')
+                                            
+                                            # Get fresh data
+                                            students = db.get_all_students()
+                                            materials = db.get_active_materials()
+                                            projects = db.get_all_projects()
+                                            
+                                            purchase_date_str = p.get('purchase_date') or ''
+                                            try:
+                                                date_value = datetime.fromisoformat(purchase_date_str.split(' ')[0]).strftime('%Y-%m-%d')
+                                            except Exception:
+                                                date_value = str(date.today())
+                                            
+                                            date_input = ui.input('Date *', value=date_value).props('type=date').classes('w-full')
+                                            
+                                            student_options = {s['name']: s['id'] for s in students}
+                                            current_student = next((s['name'] for s in students if s['id'] == p['student_id']), '')
+                                            student_select = ui.select(list(student_options.keys()), label='Student *', value=current_student).classes('w-full')
+                                            
+                                            material_options = {m['name']: m['id'] for m in materials}
+                                            current_material = next((m['name'] for m in materials if m['id'] == p['material_id']), '')
+                                            material_select = ui.select(list(material_options.keys()), label='Material *', value=current_material).classes('w-full')
+                                            
+                                            quantity_input = ui.number('Quantity *', min=0.01, step=0.01, precision=2, value=float(p.get('quantity') or 0)).classes('w-full')
+                                            
+                                            project_options = {'None': None}
+                                            project_options.update({proj['name']: proj['id'] for proj in projects})
+                                            current_project = 'None'
+                                            if p.get('project_id'):
+                                                current_project = next((proj['name'] for proj in projects if proj['id'] == p['project_id']), 'None')
+                                            project_select = ui.select(list(project_options.keys()), label='Project', value=current_project).classes('w-full')
+                                            
+                                            notes_input = ui.textarea('Notes', value=p.get('notes') or '').classes('w-full')
+                                            
+                                            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                                ui.button('Cancel', on_click=edit_dialog.close).props('flat')
+                                                
+                                                def update_purchase():
+                                                    if not student_select.value or not material_select.value or not quantity_input.value or quantity_input.value <= 0:
+                                                        ui.notify('Please fill in all required fields', type='warning')
+                                                        return
+                                                    
+                                                    try:
+                                                        db.update_purchase(
+                                                            purchase_id=p['id'],
+                                                            student_id=student_options[student_select.value],
+                                                            material_id=material_options[material_select.value],
+                                                            quantity=quantity_input.value,
+                                                            project_id=project_options[project_select.value],
+                                                            notes=notes_input.value or '',
+                                                            purchase_date=date_input.value
+                                                        )
+                                                        ui.notify('Purchase updated successfully', type='positive')
+                                                        edit_dialog.close()
+                                                        ui.navigate.to('/')
+                                                    except Exception as e:
+                                                        ui.notify(f'Failed to update purchase: {str(e)}', type='negative')
+                                                
+                                                ui.button('Update', on_click=update_purchase)
+                                        
+                                        edit_dialog.open()
+                                    return edit_handler
+                                
+                                def create_delete_purchase_handler(p):
+                                    def delete_handler():
+                                        with ui.dialog() as delete_dialog, ui.card().classes('w-96'):
+                                            ui.label('Delete Purchase?').classes('text-xl font-bold mb-4')
+                                            ui.label(f"Student: {p.get('student_name') or 'Unknown'}").classes('text-gray-600')
+                                            ui.label(f"Material: {p.get('material_name') or 'Unknown'}").classes('text-gray-600')
+                                            ui.label(f"Quantity: {p.get('quantity'):.2f} {p.get('unit_type')}").classes('text-gray-600')
+                                            ui.label(f"Cost: {format_currency(p.get('total_cost'))}").classes('text-gray-600 font-bold')
+                                            ui.label('This action cannot be undone.').classes('text-red-600 mt-4')
+                                            
+                                            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                                ui.button('Cancel', on_click=delete_dialog.close).props('flat')
+                                                
+                                                def confirm_delete():
+                                                    try:
+                                                        db.delete_purchase(p['id'])
+                                                        ui.notify('Purchase deleted successfully', type='positive')
+                                                        delete_dialog.close()
+                                                        ui.navigate.to('/')
+                                                    except Exception as e:
+                                                        ui.notify(f'Failed to delete purchase: {str(e)}', type='negative')
+                                                
+                                                ui.button('Delete', on_click=confirm_delete).props('color=red')
+                                        
+                                        delete_dialog.open()
+                                    return delete_handler
+                                
+                                with ui.row().classes('gap-1'):
+                                    ui.button('✏️', on_click=create_edit_purchase_handler(purchase)).props('flat dense color=blue').classes('text-sm')
+                                    ui.button('🗑', on_click=create_delete_purchase_handler(purchase)).props('flat dense color=red').classes('text-sm')
+                                ui.label('')  # Empty cell for layout
                     else:
                         ui.label('No purchases recorded yet').classes('text-gray-500')
                 
@@ -268,12 +369,14 @@ def dashboard_page():
                     class_only_payments = [p for p in all_payments if p.get('student_id') not in sales_channel_ids][:10]
                     
                     if class_only_payments:
-                        with ui.grid(columns=5).classes('w-full gap-2'):
+                        with ui.grid(columns=7).classes('w-full gap-2'):
                             ui.label('Date').classes('font-bold')
                             ui.label('Student').classes('font-bold')
                             ui.label('Amount').classes('font-bold')
                             ui.label('Method').classes('font-bold')
                             ui.label('Notes').classes('font-bold')
+                            ui.label('Actions').classes('font-bold')
+                            ui.label('')  # Empty cell for layout
                             
                             for payment in class_only_payments:
                                 raw_date = payment.get('payment_date') or ''
@@ -287,6 +390,79 @@ def dashboard_page():
                                 ui.label(format_currency(float(payment.get('amount') or 0))).classes('font-bold text-green-700')
                                 ui.label(payment.get('payment_method') or '-')
                                 ui.label(payment.get('notes') or '-')
+                                
+                                # Action buttons
+                                def create_edit_handler(p):
+                                    def edit_handler():
+                                        with ui.dialog() as edit_dialog, ui.card().classes('w-96'):
+                                            ui.label('Edit Payment').classes('text-xl font-bold mb-4')
+                                            
+                                            payment_date_str = p.get('payment_date') or ''
+                                            try:
+                                                date_value = datetime.fromisoformat(payment_date_str.split(' ')[0]).strftime('%Y-%m-%d')
+                                            except Exception:
+                                                date_value = str(date.today())
+                                            
+                                            date_input = ui.input('Date *', value=date_value).props('type=date').classes('w-full')
+                                            amount_input = ui.number('Amount (£) *', min=0, step=0.01, precision=2, value=float(p.get('amount') or 0)).classes('w-full')
+                                            method_input = ui.select(['Cash', 'Card', 'Bank Transfer', 'Other'], 
+                                                                    label='Payment Method', value=p.get('payment_method') or '').classes('w-full')
+                                            notes_input = ui.textarea('Notes', value=p.get('notes') or '').classes('w-full')
+                                            
+                                            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                                ui.button('Cancel', on_click=edit_dialog.close).props('flat')
+                                                
+                                                def update_payment():
+                                                    if not amount_input.value or amount_input.value <= 0:
+                                                        ui.notify('Please enter a valid amount', type='warning')
+                                                        return
+                                                    
+                                                    if db.update_payment(
+                                                        payment_id=p['id'],
+                                                        amount=amount_input.value,
+                                                        payment_method=method_input.value or '',
+                                                        notes=notes_input.value or '',
+                                                        payment_date=date_input.value
+                                                    ):
+                                                        ui.notify('Payment updated successfully', type='positive')
+                                                        edit_dialog.close()
+                                                        ui.navigate.to('/')
+                                                    else:
+                                                        ui.notify('Failed to update payment', type='negative')
+                                                
+                                                ui.button('Update', on_click=update_payment)
+                                        
+                                        edit_dialog.open()
+                                    return edit_handler
+                                
+                                def create_delete_handler(p):
+                                    def delete_handler():
+                                        with ui.dialog() as delete_dialog, ui.card().classes('w-96'):
+                                            ui.label('Delete Payment?').classes('text-xl font-bold mb-4')
+                                            ui.label(f"Student: {p.get('student_name') or 'Unknown'}").classes('text-gray-600')
+                                            ui.label(f"Amount: {format_currency(float(p.get('amount') or 0))}").classes('text-gray-600 font-bold')
+                                            ui.label('This action cannot be undone.').classes('text-red-600 mt-4')
+                                            
+                                            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                                ui.button('Cancel', on_click=delete_dialog.close).props('flat')
+                                                
+                                                def confirm_delete():
+                                                    if db.delete_payment(p['id']):
+                                                        ui.notify('Payment deleted successfully', type='positive')
+                                                        delete_dialog.close()
+                                                        ui.navigate.to('/')
+                                                    else:
+                                                        ui.notify('Failed to delete payment', type='negative')
+                                                
+                                                ui.button('Delete', on_click=confirm_delete).props('color=red')
+                                        
+                                        delete_dialog.open()
+                                    return delete_handler
+                                
+                                with ui.row().classes('gap-1'):
+                                    ui.button('✏️', on_click=create_edit_handler(payment)).props('flat dense color=blue').classes('text-sm')
+                                    ui.button('🗑', on_click=create_delete_handler(payment)).props('flat dense color=red').classes('text-sm')
+                                ui.label('')  # Empty cell for layout
                     else:
                         ui.label('No class payments recorded yet').classes('text-gray-500')
                 
@@ -302,11 +478,13 @@ def dashboard_page():
                     ][:10]
                     
                     if cash_payments:
-                        with ui.grid(columns=4).classes('w-full gap-2'):
+                        with ui.grid(columns=6).classes('w-full gap-2'):
                             ui.label('Date').classes('font-bold')
                             ui.label('Student').classes('font-bold')
                             ui.label('Amount').classes('font-bold')
                             ui.label('Notes').classes('font-bold')
+                            ui.label('Actions').classes('font-bold')
+                            ui.label('')  # Empty cell for layout
                             
                             for payment in cash_payments:
                                 raw_date = payment.get('payment_date') or ''
@@ -319,6 +497,79 @@ def dashboard_page():
                                 ui.label(payment.get('student_name') or '')
                                 ui.label(format_currency(float(payment.get('amount') or 0))).classes('font-bold text-green-700')
                                 ui.label(payment.get('notes') or '-')
+                                
+                                # Action buttons
+                                def create_edit_handler_cash(p):
+                                    def edit_handler():
+                                        with ui.dialog() as edit_dialog, ui.card().classes('w-96'):
+                                            ui.label('Edit Payment').classes('text-xl font-bold mb-4')
+                                            
+                                            payment_date_str = p.get('payment_date') or ''
+                                            try:
+                                                date_value = datetime.fromisoformat(payment_date_str.split(' ')[0]).strftime('%Y-%m-%d')
+                                            except Exception:
+                                                date_value = str(date.today())
+                                            
+                                            date_input = ui.input('Date *', value=date_value).props('type=date').classes('w-full')
+                                            amount_input = ui.number('Amount (£) *', min=0, step=0.01, precision=2, value=float(p.get('amount') or 0)).classes('w-full')
+                                            method_input = ui.select(['Cash', 'Card', 'Bank Transfer', 'Other'], 
+                                                                    label='Payment Method', value=p.get('payment_method') or '').classes('w-full')
+                                            notes_input = ui.textarea('Notes', value=p.get('notes') or '').classes('w-full')
+                                            
+                                            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                                ui.button('Cancel', on_click=edit_dialog.close).props('flat')
+                                                
+                                                def update_payment():
+                                                    if not amount_input.value or amount_input.value <= 0:
+                                                        ui.notify('Please enter a valid amount', type='warning')
+                                                        return
+                                                    
+                                                    if db.update_payment(
+                                                        payment_id=p['id'],
+                                                        amount=amount_input.value,
+                                                        payment_method=method_input.value or '',
+                                                        notes=notes_input.value or '',
+                                                        payment_date=date_input.value
+                                                    ):
+                                                        ui.notify('Payment updated successfully', type='positive')
+                                                        edit_dialog.close()
+                                                        ui.navigate.to('/')
+                                                    else:
+                                                        ui.notify('Failed to update payment', type='negative')
+                                                
+                                                ui.button('Update', on_click=update_payment)
+                                        
+                                        edit_dialog.open()
+                                    return edit_handler
+                                
+                                def create_delete_handler_cash(p):
+                                    def delete_handler():
+                                        with ui.dialog() as delete_dialog, ui.card().classes('w-96'):
+                                            ui.label('Delete Payment?').classes('text-xl font-bold mb-4')
+                                            ui.label(f"Student: {p.get('student_name') or 'Unknown'}").classes('text-gray-600')
+                                            ui.label(f"Amount: {format_currency(float(p.get('amount') or 0))}").classes('text-gray-600 font-bold')
+                                            ui.label('This action cannot be undone.').classes('text-red-600 mt-4')
+                                            
+                                            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                                ui.button('Cancel', on_click=delete_dialog.close).props('flat')
+                                                
+                                                def confirm_delete():
+                                                    if db.delete_payment(p['id']):
+                                                        ui.notify('Payment deleted successfully', type='positive')
+                                                        delete_dialog.close()
+                                                        ui.navigate.to('/')
+                                                    else:
+                                                        ui.notify('Failed to delete payment', type='negative')
+                                                
+                                                ui.button('Delete', on_click=confirm_delete).props('color=red')
+                                        
+                                        delete_dialog.open()
+                                    return delete_handler
+                                
+                                with ui.row().classes('gap-1'):
+                                    ui.button('✏️', on_click=create_edit_handler_cash(payment)).props('flat dense color=blue').classes('text-sm')
+                                    ui.button('🗑', on_click=create_delete_handler_cash(payment)).props('flat dense color=red').classes('text-sm')
+                                ui.label('')  # Empty cell for layout
                     else:
                         ui.label('No class cash payments recorded yet').classes('text-gray-500')
                 
@@ -329,12 +580,14 @@ def dashboard_page():
                     sales_payments = [p for p in all_payments if p.get('student_id') in sales_channel_ids][:10]
                     
                     if sales_payments:
-                        with ui.grid(columns=5).classes('w-full gap-2'):
+                        with ui.grid(columns=7).classes('w-full gap-2'):
                             ui.label('Date').classes('font-bold')
                             ui.label('Channel').classes('font-bold')
                             ui.label('Amount').classes('font-bold')
                             ui.label('Method').classes('font-bold')
                             ui.label('Notes').classes('font-bold')
+                            ui.label('Actions').classes('font-bold')
+                            ui.label('')  # Empty cell for layout
                             
                             for payment in sales_payments:
                                 raw_date = payment.get('payment_date') or ''
@@ -348,6 +601,79 @@ def dashboard_page():
                                 ui.label(format_currency(float(payment.get('amount') or 0))).classes('font-bold text-green-700')
                                 ui.label(payment.get('payment_method') or '-')
                                 ui.label(payment.get('notes') or '-')
+                                
+                                # Action buttons
+                                def create_edit_handler_sales(p):
+                                    def edit_handler():
+                                        with ui.dialog() as edit_dialog, ui.card().classes('w-96'):
+                                            ui.label('Edit Sale').classes('text-xl font-bold mb-4')
+                                            
+                                            payment_date_str = p.get('payment_date') or ''
+                                            try:
+                                                date_value = datetime.fromisoformat(payment_date_str.split(' ')[0]).strftime('%Y-%m-%d')
+                                            except Exception:
+                                                date_value = str(date.today())
+                                            
+                                            date_input = ui.input('Date *', value=date_value).props('type=date').classes('w-full')
+                                            amount_input = ui.number('Amount (£) *', min=0, step=0.01, precision=2, value=float(p.get('amount') or 0)).classes('w-full')
+                                            method_input = ui.select(['Cash', 'Card', 'Bank Transfer', 'Other'], 
+                                                                    label='Payment Method', value=p.get('payment_method') or '').classes('w-full')
+                                            notes_input = ui.textarea('Notes', value=p.get('notes') or '').classes('w-full')
+                                            
+                                            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                                ui.button('Cancel', on_click=edit_dialog.close).props('flat')
+                                                
+                                                def update_payment():
+                                                    if not amount_input.value or amount_input.value <= 0:
+                                                        ui.notify('Please enter a valid amount', type='warning')
+                                                        return
+                                                    
+                                                    if db.update_payment(
+                                                        payment_id=p['id'],
+                                                        amount=amount_input.value,
+                                                        payment_method=method_input.value or '',
+                                                        notes=notes_input.value or '',
+                                                        payment_date=date_input.value
+                                                    ):
+                                                        ui.notify('Sale updated successfully', type='positive')
+                                                        edit_dialog.close()
+                                                        ui.navigate.to('/')
+                                                    else:
+                                                        ui.notify('Failed to update sale', type='negative')
+                                                
+                                                ui.button('Update', on_click=update_payment)
+                                        
+                                        edit_dialog.open()
+                                    return edit_handler
+                                
+                                def create_delete_handler_sales(p):
+                                    def delete_handler():
+                                        with ui.dialog() as delete_dialog, ui.card().classes('w-96'):
+                                            ui.label('Delete Sale?').classes('text-xl font-bold mb-4')
+                                            ui.label(f"Channel: {p.get('student_name') or 'Unknown'}").classes('text-gray-600')
+                                            ui.label(f"Amount: {format_currency(float(p.get('amount') or 0))}").classes('text-gray-600 font-bold')
+                                            ui.label('This action cannot be undone.').classes('text-red-600 mt-4')
+                                            
+                                            with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                                ui.button('Cancel', on_click=delete_dialog.close).props('flat')
+                                                
+                                                def confirm_delete():
+                                                    if db.delete_payment(p['id']):
+                                                        ui.notify('Sale deleted successfully', type='positive')
+                                                        delete_dialog.close()
+                                                        ui.navigate.to('/')
+                                                    else:
+                                                        ui.notify('Failed to delete sale', type='negative')
+                                                
+                                                ui.button('Delete', on_click=confirm_delete).props('color=red')
+                                        
+                                        delete_dialog.open()
+                                    return delete_handler
+                                
+                                with ui.row().classes('gap-1'):
+                                    ui.button('✏️', on_click=create_edit_handler_sales(payment)).props('flat dense color=blue').classes('text-sm')
+                                    ui.button('🗑', on_click=create_delete_handler_sales(payment)).props('flat dense color=red').classes('text-sm')
+                                ui.label('')  # Empty cell for layout
                     else:
                         ui.label('No sales recorded yet').classes('text-gray-500')
                         ui.label('Add sales channels (like "Market" or "Private Sale") as students with the sales channel flag.').classes('text-sm text-gray-400 mt-2')
