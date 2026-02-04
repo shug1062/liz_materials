@@ -28,10 +28,13 @@ def students_page(selected_class: Optional[str] = None):
             student_container.clear()
             balances = db.get_all_student_balances()
             
-            # Group students by class
+            # Group students by class (exclude sales channels)
             classes = {}
             for balance in balances:
                 student = db.get_student(balance['student_id'])
+                # Skip sales channels
+                if student.get('is_sales_channel'):
+                    continue
                 class_name = student.get('class_name') or 'No Class Assigned'
                 if class_name not in classes:
                     classes[class_name] = []
@@ -47,6 +50,10 @@ def students_page(selected_class: Optional[str] = None):
                 
                 # Display classes in custom order
                 for class_name in ordered_classes:
+                    # Skip if this class has no students (all were sales channels)
+                    if class_name not in classes:
+                        continue
+                    
                     students_in_class = classes[class_name]
                     
                     # Create an expansion panel for each class
@@ -198,6 +205,10 @@ def students_page(selected_class: Optional[str] = None):
                 phone_input = ui.input('Phone').classes('w-full')
                 notes_input = ui.textarea('Notes').classes('w-full')
                 
+                # Sales channel checkbox
+                sales_channel_checkbox = ui.checkbox('Mark as Sales Channel (e.g., Market, Private Sale)').classes('mt-2')
+                ui.label('Sales channels are used to track external sales separately from class students').classes('text-xs text-gray-500 -mt-1')
+                
                 with ui.row().classes('w-full justify-end gap-2 mt-4'):
                     ui.button('Cancel', on_click=dialog.close).props('flat')
                     
@@ -211,7 +222,8 @@ def students_page(selected_class: Optional[str] = None):
                             email=email_input.value or "",
                             phone=phone_input.value or "",
                             notes=notes_input.value or "",
-                            class_name=class_input.value or ""
+                            class_name=class_input.value or "",
+                            is_sales_channel=sales_channel_checkbox.value
                         )
                         ui.notify(f'Student {name_input.value} added successfully!', type='positive')
                         dialog.close()
@@ -252,6 +264,10 @@ def student_detail_page(student_id: int, class_name: Optional[str] = None):
             phone_input = ui.input('Phone', value=student_data.get('phone') or '').classes('w-full')
             notes_input = ui.textarea('Notes', value=student_data.get('notes') or '').classes('w-full')
             
+            # Sales channel checkbox
+            sales_channel_checkbox = ui.checkbox('Mark as Sales Channel (e.g., Market, Private Sale)', value=bool(student_data.get('is_sales_channel'))).classes('mt-2')
+            ui.label('Sales channels are used to track external sales separately from class students').classes('text-xs text-gray-500 -mt-1')
+            
             with ui.row().classes('w-full justify-end gap-2 mt-4'):
                 ui.button('Cancel', on_click=dialog.close).props('flat')
                 
@@ -266,7 +282,8 @@ def student_detail_page(student_id: int, class_name: Optional[str] = None):
                         email=email_input.value or "",
                         phone=phone_input.value or "",
                         notes=notes_input.value or "",
-                        class_name=class_input.value or ""
+                        class_name=class_input.value or "",
+                        is_sales_channel=sales_channel_checkbox.value
                     )
                     ui.notify(f'Student {name_input.value} updated successfully!', type='positive')
                     dialog.close()

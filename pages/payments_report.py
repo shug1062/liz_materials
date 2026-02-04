@@ -23,34 +23,56 @@ def _parse_date_yyyy_mm_dd(value: Optional[str]) -> Optional[date]:
         return None
 
 
-def payments_report_page():
-    """View all payments with date filters and method summary."""
+def payments_report_page(filter_type: Optional[str] = None):
+    """View all payments with date filters and method summary.
+    
+    Args:
+        filter_type: 'class' to show only class payments, 'sales' to show only sales channel payments, None for all
+    """
     create_header()
+    
+    # Determine page title based on filter
+    if filter_type == 'class':
+        page_title = 'Class Payments'
+    elif filter_type == 'sales':
+        page_title = 'Sales'
+    else:
+        page_title = 'Payments'
 
     with ui.column().classes('w-full items-center p-4'):
         with ui.row().classes('w-full max-w-6xl items-center justify-between mb-4'):
             ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat')
-            ui.label('Payments').classes('text-3xl font-bold')
+            ui.label(page_title).classes('text-3xl font-bold')
             ui.button('Record Payment', on_click=lambda: ui.navigate.to('/payments')).props('outline')
 
         with ui.card().classes('w-full max-w-6xl mb-4'):
             ui.label('Filters').classes('text-lg font-bold mb-2')
             with ui.row().classes('w-full gap-4 items-end flex-wrap'):
                 students = db.get_all_students()
-                student_options = {'All Students': None}
+                # Filter students based on filter_type
+                if filter_type == 'class':
+                    students = [s for s in students if not s.get('is_sales_channel')]
+                    filter_label = 'All Class Students'
+                elif filter_type == 'sales':
+                    students = [s for s in students if s.get('is_sales_channel')]
+                    filter_label = 'All Sales Channels'
+                else:
+                    filter_label = 'All Students'
+                
+                student_options = {filter_label: None}
                 for s in students:
                     student_options[s['name']] = s['id']
                 student_select = ui.select(
                     list(student_options.keys()),
-                    label='Student',
-                    value='All Students',
+                    label='Student' if filter_type != 'sales' else 'Sales Channel',
+                    value=filter_label,
                 ).classes('w-72')
 
                 start_input = ui.input('Start Date').props('type=date').classes('w-56')
                 end_input = ui.input('End Date').props('type=date').classes('w-56')
 
                 def clear_filters():
-                    student_select.value = 'All Students'
+                    student_select.value = filter_label
                     start_input.value = ''
                     end_input.value = ''
                     refresh()
@@ -72,6 +94,14 @@ def payments_report_page():
                 end_date=end_date.isoformat() if end_date else None,
                 student_id=selected_student_id,
             )
+            
+            # Filter payments based on filter_type if no specific student is selected
+            if not selected_student_id and filter_type:
+                all_students_dict = {s['id']: s for s in db.get_all_students()}
+                if filter_type == 'class':
+                    payments = [p for p in payments if not all_students_dict.get(p.get('student_id'), {}).get('is_sales_channel')]
+                elif filter_type == 'sales':
+                    payments = [p for p in payments if all_students_dict.get(p.get('student_id'), {}).get('is_sales_channel')]
 
             total_amount = sum(float(p.get('amount') or 0) for p in payments)
             cash_total = sum(

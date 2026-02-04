@@ -52,8 +52,8 @@ def payments(class_name: Optional[str] = None, student_id: Optional[int] = None,
 
 
 @ui.page('/payments_report')
-def payments_report():
-    payments_report_page()
+def payments_report(filter: Optional[str] = None):
+    payments_report_page(filter_type=filter)
 
 
 # Run the app

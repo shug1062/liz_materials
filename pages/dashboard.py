@@ -19,33 +19,50 @@ def dashboard_page():
         ui.label('Dashboard').classes('text-3xl font-bold mb-4')
         
         # Summary cards - All 5 in one row with consistent height
-        summary_row = ui.row().classes('w-full max-w-6xl gap-4 mb-8')
+        summary_row = ui.row().classes('w-full max-w-6xl gap-4 mb-4')
         
         with summary_row:
             students = db.get_all_students()
             materials = db.get_all_materials()
             balances = db.get_all_student_balances()
             
-            total_debt = sum(abs(b['balance']) for b in balances if b['balance'] < 0)
-            total_credit = sum(b['balance'] for b in balances if b['balance'] > 0)
+            # Separate regular students from sales channels
+            regular_students = [s for s in students if not s.get('is_sales_channel')]
+            sales_channels = [s for s in students if s.get('is_sales_channel')]
             
-            # Get all payments and calculate cash/card totals
+            # Calculate class sales (excluding sales channels)
+            class_debt = 0
+            class_credit = 0
+            for balance in balances:
+                student = db.get_student(balance['student_id'])
+                if not student.get('is_sales_channel'):
+                    if balance['balance'] < 0:
+                        class_debt += abs(balance['balance'])
+                    elif balance['balance'] > 0:
+                        class_credit += balance['balance']
+            
+            # Get all payments and calculate cash/card totals for classes only (exclude sales channels)
             all_payments = db.get_all_payments()
+            sales_channel_ids = [c['id'] for c in sales_channels]
+            
+            # Filter out sales channel payments for class summary
+            class_payments = [p for p in all_payments if p.get('student_id') not in sales_channel_ids]
+            
             cash_total = sum(
                 float(p.get('amount') or 0)
-                for p in all_payments
+                for p in class_payments
                 if (p.get('payment_method') or '').strip().lower() == 'cash'
             )
             card_total = sum(
                 float(p.get('amount') or 0)
-                for p in all_payments
+                for p in class_payments
                 if (p.get('payment_method') or '').strip().lower() == 'card'
             )
             
-            # Payment summary card - replaces Total Students
+            # Payment summary card - classes only
             with ui.card().classes('flex-1 bg-blue-50 h-40 flex items-center justify-center'):
                 with ui.column().classes('items-center gap-1'):
-                    ui.label('Payment Summary').classes('text-sm font-bold text-blue-600 mb-1')
+                    ui.label('Class Payment Summary').classes('text-sm font-bold text-blue-600 mb-1')
                     with ui.row().classes('gap-4'):
                         with ui.column().classes('items-center'):
                             ui.label(format_currency(cash_total)).classes('text-2xl font-bold text-blue-700')
@@ -61,13 +78,13 @@ def dashboard_page():
             
             with ui.card().classes('flex-1 bg-red-50 h-40 flex items-center justify-center'):
                 with ui.column().classes('items-center'):
-                    ui.label(format_currency(total_debt)).classes('text-4xl font-bold text-red-600')
-                    ui.label('Total Outstanding Debt').classes('text-gray-600 text-center')
+                    ui.label(format_currency(class_debt)).classes('text-4xl font-bold text-red-600')
+                    ui.label('Class Debt').classes('text-gray-600 text-center')
             
             with ui.card().classes('flex-1 bg-purple-50 h-40 flex items-center justify-center'):
                 with ui.column().classes('items-center'):
-                    ui.label(format_currency(total_credit)).classes('text-4xl font-bold text-purple-600')
-                    ui.label('Total Credit').classes('text-gray-600')
+                    ui.label(format_currency(class_credit)).classes('text-4xl font-bold text-purple-600')
+                    ui.label('Class Credit').classes('text-gray-600')
             
             # Silver price card - 5th card in same row with same height
             silver_card = ui.card().classes('flex-1 bg-amber-50 h-40')
@@ -119,6 +136,61 @@ def dashboard_page():
                     # Check hourly while the dashboard is open.
                     ui.timer(60 * 60, _auto_refresh_if_needed)
         
+        # Sales Channels Summary section
+        if sales_channels:
+            with ui.card().classes('w-full max-w-6xl mb-4 bg-gradient-to-r from-teal-50 to-cyan-50'):
+                ui.label('Sales Channels Summary').classes('text-xl font-bold mb-4')
+                
+                # Calculate combined totals
+                combined_cash = 0
+                combined_card = 0
+                combined_total = 0
+                
+                channel_data = []
+                for channel in sales_channels:
+                    # Get all payments for this channel
+                    channel_payments = db.get_all_payments(student_id=channel['id'])
+                    cash_total = sum(
+                        float(p.get('amount') or 0)
+                        for p in channel_payments
+                        if (p.get('payment_method') or '').strip().lower() == 'cash'
+                    )
+                    card_total = sum(
+                        float(p.get('amount') or 0)
+                        for p in channel_payments
+                        if (p.get('payment_method') or '').strip().lower() == 'card'
+                    )
+                    total = cash_total + card_total
+                    
+                    combined_cash += cash_total
+                    combined_card += card_total
+                    combined_total += total
+                    
+                    channel_data.append({
+                        'name': channel['name'],
+                        'cash': cash_total,
+                        'card': card_total,
+                        'total': total
+                    })
+                
+                # Display all channels in a single row
+                with ui.row().classes('w-full gap-2'):
+                    for data in channel_data:
+                        with ui.card().classes('flex-1 bg-white'):
+                            with ui.column().classes('items-center justify-start pt-1 px-2 pb-2 gap-0'):
+                                ui.label(data['name']).classes('text-xs font-bold text-teal-700 mb-1')
+                                ui.label(f"Cash: {format_currency(data['cash'])}").classes('text-xs text-gray-600')
+                                ui.label(f"Card: {format_currency(data['card'])}").classes('text-xs text-gray-600')
+                                ui.label(f"Total: {format_currency(data['total'])}").classes('text-xs font-bold text-teal-600')
+                    
+                    # Combined total card
+                    with ui.card().classes('flex-1 bg-teal-100'):
+                        with ui.column().classes('items-center justify-start pt-1 px-2 pb-2 gap-0'):
+                            ui.label('Combined').classes('text-xs font-bold text-teal-800 mb-1')
+                            ui.label(f"Cash: {format_currency(combined_cash)}").classes('text-xs text-gray-700')
+                            ui.label(f"Card: {format_currency(combined_card)}").classes('text-xs text-gray-700')
+                            ui.label(f"Total: {format_currency(combined_total)}").classes('text-xs font-bold text-teal-700')
+        
         # Class buttons section
         with ui.card().classes('w-full max-w-6xl'):
             ui.label('Classes').classes('text-xl font-bold mb-4')
@@ -151,7 +223,8 @@ def dashboard_page():
             ui.button('Projects', on_click=lambda: ui.navigate.to('/projects')).classes('flex-1')
             ui.button('Record Purchase', on_click=lambda: ui.navigate.to('/purchases')).classes('flex-1')
             ui.button('Record Payment', on_click=lambda: ui.navigate.to('/payments')).classes('flex-1')
-            ui.button('View Payments', on_click=lambda: ui.navigate.to('/payments_report')).classes('flex-1')
+            ui.button('View Class Payments', on_click=lambda: ui.navigate.to('/payments_report?filter=class')).classes('flex-1')
+            ui.button('View Sales', on_click=lambda: ui.navigate.to('/payments_report?filter=sales')).classes('flex-1')
         
         # Recent activity with tabs
         with ui.card().classes('w-full max-w-6xl'):
@@ -159,8 +232,9 @@ def dashboard_page():
             
             with ui.tabs().classes('w-full') as tabs:
                 purchases_tab = ui.tab('Recent Purchases')
-                payments_tab = ui.tab('Recent Payments')
-                cash_tab = ui.tab('Recent Cash Payments')
+                payments_tab = ui.tab('Recent Class Payments')
+                cash_tab = ui.tab('Recent Class Cash Payments')
+                sales_tab = ui.tab('Recent Sales')
             
             with ui.tab_panels(tabs, value=purchases_tab).classes('w-full'):
                 # Recent Purchases tab
@@ -187,11 +261,13 @@ def dashboard_page():
                     else:
                         ui.label('No purchases recorded yet').classes('text-gray-500')
                 
-                # Recent Payments tab
+                # Recent Class Payments tab (exclude sales channels)
                 with ui.tab_panel(payments_tab):
-                    payments = db.get_all_payments()[:10]  # Last 10 payments
+                    # Get only class payments (exclude sales channels)
+                    sales_channel_ids = [c['id'] for c in sales_channels]
+                    class_only_payments = [p for p in all_payments if p.get('student_id') not in sales_channel_ids][:10]
                     
-                    if payments:
+                    if class_only_payments:
                         with ui.grid(columns=5).classes('w-full gap-2'):
                             ui.label('Date').classes('font-bold')
                             ui.label('Student').classes('font-bold')
@@ -199,7 +275,7 @@ def dashboard_page():
                             ui.label('Method').classes('font-bold')
                             ui.label('Notes').classes('font-bold')
                             
-                            for payment in payments:
+                            for payment in class_only_payments:
                                 raw_date = payment.get('payment_date') or ''
                                 try:
                                     shown_date = datetime.fromisoformat(raw_date).strftime('%d/%m/%Y')
@@ -212,12 +288,18 @@ def dashboard_page():
                                 ui.label(payment.get('payment_method') or '-')
                                 ui.label(payment.get('notes') or '-')
                     else:
-                        ui.label('No payments recorded yet').classes('text-gray-500')
+                        ui.label('No class payments recorded yet').classes('text-gray-500')
                 
-                # Recent Cash Payments tab
+                # Recent Class Cash Payments tab (exclude sales channels)
                 with ui.tab_panel(cash_tab):
-                    all_payments = db.get_all_payments()
-                    cash_payments = [p for p in all_payments if (p.get('payment_method') or '').strip().lower() == 'cash'][:10]
+                    # Get only class cash payments (exclude sales channels)
+                    sales_channel_ids = [c['id'] for c in sales_channels]
+                    all_payments_list = db.get_all_payments()
+                    cash_payments = [
+                        p for p in all_payments_list 
+                        if (p.get('payment_method') or '').strip().lower() == 'cash' 
+                        and p.get('student_id') not in sales_channel_ids
+                    ][:10]
                     
                     if cash_payments:
                         with ui.grid(columns=4).classes('w-full gap-2'):
@@ -238,4 +320,34 @@ def dashboard_page():
                                 ui.label(format_currency(float(payment.get('amount') or 0))).classes('font-bold text-green-700')
                                 ui.label(payment.get('notes') or '-')
                     else:
-                        ui.label('No cash payments recorded yet').classes('text-gray-500')
+                        ui.label('No class cash payments recorded yet').classes('text-gray-500')
+                
+                # Recent Sales tab (payments to sales channels)
+                with ui.tab_panel(sales_tab):
+                    # Get payments only for sales channels
+                    sales_channel_ids = [c['id'] for c in sales_channels]
+                    sales_payments = [p for p in all_payments if p.get('student_id') in sales_channel_ids][:10]
+                    
+                    if sales_payments:
+                        with ui.grid(columns=5).classes('w-full gap-2'):
+                            ui.label('Date').classes('font-bold')
+                            ui.label('Channel').classes('font-bold')
+                            ui.label('Amount').classes('font-bold')
+                            ui.label('Method').classes('font-bold')
+                            ui.label('Notes').classes('font-bold')
+                            
+                            for payment in sales_payments:
+                                raw_date = payment.get('payment_date') or ''
+                                try:
+                                    shown_date = datetime.fromisoformat(raw_date).strftime('%d/%m/%Y')
+                                except Exception:
+                                    shown_date = raw_date
+                                
+                                ui.label(shown_date)
+                                ui.label(payment.get('student_name') or '').classes('text-teal-700 font-semibold')
+                                ui.label(format_currency(float(payment.get('amount') or 0))).classes('font-bold text-green-700')
+                                ui.label(payment.get('payment_method') or '-')
+                                ui.label(payment.get('notes') or '-')
+                    else:
+                        ui.label('No sales recorded yet').classes('text-gray-500')
+                        ui.label('Add sales channels (like "Market" or "Private Sale") as students with the sales channel flag.').classes('text-sm text-gray-400 mt-2')

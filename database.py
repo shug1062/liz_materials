@@ -39,6 +39,10 @@ class Database:
         if 'class_name' not in student_columns:
             cursor.execute('ALTER TABLE students ADD COLUMN class_name TEXT')
         
+        # Add is_sales_channel column if it doesn't exist
+        if 'is_sales_channel' not in student_columns:
+            cursor.execute('ALTER TABLE students ADD COLUMN is_sales_channel INTEGER DEFAULT 0')
+        
         # Materials table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS materials (
@@ -278,14 +282,14 @@ class Database:
     
     # ============ STUDENTS ============
     
-    def add_student(self, name: str, email: str = "", phone: str = "", notes: str = "", class_name: str = "") -> int:
-        """Add a new student"""
+    def add_student(self, name: str, email: str = "", phone: str = "", notes: str = "", class_name: str = "", is_sales_channel: bool = False) -> int:
+        """Add a new student or sales channel"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(
-                'INSERT INTO students (name, email, phone, notes, class_name) VALUES (?, ?, ?, ?, ?)',
-                (name, email, phone, notes, class_name)
+                'INSERT INTO students (name, email, phone, notes, class_name, is_sales_channel) VALUES (?, ?, ?, ?, ?, ?)',
+                (name, email, phone, notes, class_name, 1 if is_sales_channel else 0)
             )
             student_id = cursor.lastrowid
             conn.commit()
@@ -316,14 +320,14 @@ class Database:
         conn.close()
         return dict(row) if row else None
     
-    def update_student(self, student_id: int, name: str, email: str = "", phone: str = "", notes: str = "", class_name: str = ""):
+    def update_student(self, student_id: int, name: str, email: str = "", phone: str = "", notes: str = "", class_name: str = "", is_sales_channel: bool = False):
         """Update student information"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(
-                'UPDATE students SET name = ?, email = ?, phone = ?, notes = ?, class_name = ? WHERE id = ?',
-                (name, email, phone, notes, class_name, student_id)
+                'UPDATE students SET name = ?, email = ?, phone = ?, notes = ?, class_name = ?, is_sales_channel = ? WHERE id = ?',
+                (name, email, phone, notes, class_name, 1 if is_sales_channel else 0, student_id)
             )
             conn.commit()
         except Exception as e:
