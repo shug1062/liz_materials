@@ -4,9 +4,13 @@ from bs4 import BeautifulSoup
 from typing import Optional, Dict
 import re
 import urllib3
+from metalclay_price_scraper import MetalClayPriceScraper
 
 # Disable SSL warnings when verify=False
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Initialize Metal Clay scraper
+metalclay_scraper = MetalClayPriceScraper()
 
 # Constants
 USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -158,7 +162,7 @@ def get_material_price_from_url(url: str, use_vat: bool = True, pricing_type: st
     Get material price from supplier URL.
     
     This is the main entry point for price scraping. It routes to the appropriate
-    scraper function based on the pricing type.
+    scraper function based on the pricing type and supplier.
     
     Args:
         url: The supplier product page URL
@@ -189,6 +193,12 @@ def get_material_price_from_url(url: str, use_vat: bool = True, pricing_type: st
             
         if prices:
             return prices['inc_vat'] if use_vat else prices['exc_vat']
+    
+    elif 'metalclay.co.uk' in url:
+        # Metal Clay Ltd products - always fixed pricing
+        price_data = metalclay_scraper.fetch_product_price(url)
+        if price_data:
+            return price_data.get('price_inc_vat' if use_vat else 'price_ex_vat')
     
     return None
 
