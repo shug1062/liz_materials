@@ -111,7 +111,7 @@ def students_page(selected_class: Optional[str] = None):
                                         ).props('outline color=green').classes('min-w-[120px]')
                                         ui.button(
                                             'View Details',
-                                            on_click=lambda s_id=student['id']: ui.navigate.to(f'/student/{s_id}')
+                                            on_click=lambda s_id=student['id'], cn=class_name: ui.navigate.to(f'/student/{s_id}?class_name={quote(cn)}')
                                         )
         
         refresh_students()
@@ -222,7 +222,7 @@ def students_page(selected_class: Optional[str] = None):
             dialog.open()
 
 
-def student_detail_page(student_id: int):
+def student_detail_page(student_id: int, class_name: Optional[str] = None):
     """Individual student detail page"""
     create_header()
     
@@ -313,7 +313,12 @@ def student_detail_page(student_id: int):
         dialog.open()
     
     with ui.column().classes('w-full items-center p-4'):
-        ui.button('← Back to Students', on_click=lambda: ui.navigate.to('/students')).props('flat').classes('self-start')
+        with ui.row().classes('gap-2'):
+            if class_name:
+                encoded_class = quote(class_name)
+                ui.button(f'← Back to {class_name}', on_click=lambda cn=encoded_class: ui.navigate.to(f'/students?class_name={cn}')).props('flat')
+            ui.button('← Back to Students', on_click=lambda: ui.navigate.to('/students')).props('flat')
+            ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat')
         
         # Student header
         with ui.card().classes('w-full max-w-6xl mb-4'):
@@ -416,11 +421,13 @@ def student_detail_page(student_id: int):
                     ui.button('+ Record Payment', on_click=lambda: show_add_payment_dialog(student_id))
                 
                 if payments:
-                    with ui.grid(columns=4).classes('w-full gap-2'):
+                    with ui.grid(columns=6).classes('w-full gap-2'):
                         ui.label('Date').classes('font-bold')
                         ui.label('Amount').classes('font-bold')
                         ui.label('Method').classes('font-bold')
                         ui.label('Notes').classes('font-bold')
+                        ui.label('Actions').classes('font-bold')
+                        ui.label('')  # Empty cell for layout
                         
                         for payment in payments:
                             date = datetime.fromisoformat(payment['payment_date']).strftime('%d/%m/%Y %H:%M')
@@ -428,6 +435,91 @@ def student_detail_page(student_id: int):
                             ui.label(format_currency(payment['amount'])).classes('font-bold text-green-600')
                             ui.label(payment['payment_method'] or '-')
                             ui.label(payment['notes'] or '-')
+                            
+                            # Action buttons
+                            payment_id = payment['id']
+                            
+                            def create_edit_handler(payment_data, sid):
+                                def edit_handler():
+                                    with ui.dialog() as edit_dialog, ui.card().classes('w-96'):
+                                        ui.label('Edit Payment').classes('text-xl font-bold mb-4')
+                                        
+                                        # Parse the date for the input
+                                        payment_date_str = payment_data.get('payment_date') or ''
+                                        try:
+                                            date_value = datetime.fromisoformat(payment_date_str.split(' ')[0]).strftime('%Y-%m-%d')
+                                        except Exception:
+                                            date_value = str(date.today())
+                                        
+                                        date_input = ui.input('Date *', value=date_value).props('type=date').classes('w-full')
+                                        amount_input = ui.number('Amount (£) *', min=0, step=0.01, precision=2, value=float(payment_data.get('amount') or 0)).classes('w-full')
+                                        method_input = ui.select(['Cash', 'Card', 'Bank Transfer', 'Other'], 
+                                                                label='Payment Method', value=payment_data.get('payment_method') or '').classes('w-full')
+                                        notes_input = ui.textarea('Notes', value=payment_data.get('notes') or '').classes('w-full')
+                                        
+                                        with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                            ui.button('Cancel', on_click=edit_dialog.close).props('flat')
+                                            
+                                            def update_payment():
+                                                if not amount_input.value or amount_input.value <= 0:
+                                                    ui.notify('Please enter a valid amount', type='warning')
+                                                    return
+                                                
+                                                if db.update_payment(
+                                                    payment_id=payment_data['id'],
+                                                    amount=amount_input.value,
+                                                    payment_method=method_input.value or '',
+                                                    notes=notes_input.value or '',
+                                                    payment_date=date_input.value
+                                                ):
+                                                    ui.notify('Payment updated successfully', type='positive')
+                                                    edit_dialog.close()
+                                                    # Preserve class_name in navigation
+                                                    if class_name:
+                                                        ui.navigate.to(f'/student/{sid}?class_name={quote(class_name)}')  # Refresh page
+                                                    else:
+                                                        ui.navigate.to(f'/student/{sid}')  # Refresh page
+                                                else:
+                                                    ui.notify('Failed to update payment', type='negative')
+                                            
+                                            ui.button('Update', on_click=update_payment)
+                                    
+                                    edit_dialog.open()
+                                return edit_handler
+                            
+                            def create_delete_handler(payment_data, sid):
+                                def delete_handler():
+                                    with ui.dialog() as delete_dialog, ui.card().classes('w-96'):
+                                        ui.label('Delete Payment?').classes('text-xl font-bold mb-4')
+                                        ui.label(f"Amount: {format_currency(payment_data['amount'])}").classes('text-gray-600')
+                                        ui.label(f"Date: {datetime.fromisoformat(payment_data['payment_date']).strftime('%d/%m/%Y %H:%M')}").classes('text-gray-600')
+                                        if payment_data.get('payment_method'):
+                                            ui.label(f"Method: {payment_data['payment_method']}").classes('text-gray-600')
+                                        ui.label('This action cannot be undone.').classes('text-red-600 mt-4')
+                                        
+                                        with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                                            ui.button('Cancel', on_click=delete_dialog.close).props('flat')
+                                            
+                                            def confirm_delete():
+                                                if db.delete_payment(payment_data['id']):
+                                                    ui.notify('Payment deleted successfully', type='positive')
+                                                    delete_dialog.close()
+                                                    # Preserve class_name in navigation
+                                                    if class_name:
+                                                        ui.navigate.to(f'/student/{sid}?class_name={quote(class_name)}')  # Refresh page
+                                                    else:
+                                                        ui.navigate.to(f'/student/{sid}')  # Refresh page
+                                                else:
+                                                    ui.notify('Failed to delete payment', type='negative')
+                                            
+                                            ui.button('Delete', on_click=confirm_delete).props('color=red')
+                                    
+                                    delete_dialog.open()
+                                return delete_handler
+                            
+                            with ui.row().classes('gap-1'):
+                                ui.button('✏️', on_click=create_edit_handler(payment, student_id)).props('flat dense color=blue').classes('text-sm')
+                                ui.button('🗑', on_click=create_delete_handler(payment, student_id)).props('flat dense color=red').classes('text-sm')
                 else:
                     ui.label('No payments yet').classes('text-gray-500')
             
@@ -474,7 +566,11 @@ def student_detail_page(student_id: int):
                     )
                     ui.notify(f'Payment of {format_currency(amount_input.value)} recorded!', type='positive')
                     dialog.close()
-                    ui.navigate.to(f'/student/{student_id}')  # Refresh page
+                    # Preserve class_name in navigation
+                    if class_name:
+                        ui.navigate.to(f'/student/{student_id}?class_name={quote(class_name)}')  # Refresh page
+                    else:
+                        ui.navigate.to(f'/student/{student_id}')  # Refresh page
                 
                 ui.button('Record Payment', on_click=add_payment)
         
@@ -501,7 +597,11 @@ def student_detail_page(student_id: int):
                     )
                     ui.notify(f'Project "{name_input.value}" added!', type='positive')
                     dialog.close()
-                    ui.navigate.to(f'/student/{student_id}')  # Refresh page
+                    # Preserve class_name in navigation
+                    if class_name:
+                        ui.navigate.to(f'/student/{student_id}?class_name={quote(class_name)}')  # Refresh page
+                    else:
+                        ui.navigate.to(f'/student/{student_id}')  # Refresh page
                 
                 ui.button('Add Project', on_click=add_project)
         
@@ -578,7 +678,11 @@ def student_detail_page(student_id: int):
                     
                     ui.notify('Purchase updated successfully!', type='positive')
                     dialog.close()
-                    refresh_purchases()
+                    # Preserve class_name in navigation
+                    if class_name:
+                        ui.navigate.to(f'/student/{student_id}?class_name={quote(class_name)}')  # Refresh page
+                    else:
+                        ui.navigate.to(f'/student/{student_id}')  # Refresh page
                 
                 ui.button('Update Purchase', on_click=update_purchase)
         
@@ -600,7 +704,11 @@ def student_detail_page(student_id: int):
                     db.delete_purchase(purchase['id'])
                     ui.notify('Purchase deleted successfully!', type='positive')
                     dialog.close()
-                    refresh_purchases()
+                    # Preserve class_name in navigation
+                    if class_name:
+                        ui.navigate.to(f'/student/{student_id}?class_name={quote(class_name)}')  # Refresh entire page to update balance
+                    else:
+                        ui.navigate.to(f'/student/{student_id}')  # Refresh entire page to update balance
                 
                 ui.button('Delete', on_click=delete_purchase).props('color=red')
         

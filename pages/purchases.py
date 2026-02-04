@@ -32,9 +32,9 @@ def purchases_page(
                     '← Back to Students',
                     on_click=lambda cn=encoded_class: ui.navigate.to(f'/students?class_name={cn}')
                 ).props('flat')
-
-            if selected_student_id is None and not selected_class:
-                ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat')
+            
+            # Always show Back to Dashboard
+            ui.button('← Back to Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat')
 
         if selected_class:
             ui.label(f'Class: {selected_class}').classes('w-full max-w-2xl text-sm text-gray-600')

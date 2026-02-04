@@ -27,8 +27,8 @@ def students(class_name: Optional[str] = None):
 
 
 @ui.page('/student/{student_id}')
-def student_detail(student_id: int):
-    student_detail_page(student_id)
+def student_detail(student_id: int, class_name: str = None):
+    student_detail_page(student_id, class_name)
 
 
 @ui.page('/materials')

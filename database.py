@@ -811,6 +811,43 @@ class Database:
         payments = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return payments
+    
+    def delete_payment(self, payment_id: int) -> bool:
+        """Delete a payment by ID"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM payments WHERE id = ?', (payment_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to delete payment: {e}")
+        finally:
+            conn.close()
+    
+    def update_payment(self, payment_id: int, amount: float, payment_method: str = "", notes: str = "", payment_date: str = None) -> bool:
+        """Update a payment's details"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            if payment_date:
+                cursor.execute(
+                    'UPDATE payments SET amount = ?, payment_method = ?, notes = ?, payment_date = ? WHERE id = ?',
+                    (amount, payment_method, notes, payment_date, payment_id)
+                )
+            else:
+                cursor.execute(
+                    'UPDATE payments SET amount = ?, payment_method = ?, notes = ? WHERE id = ?',
+                    (amount, payment_method, notes, payment_id)
+                )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to update payment: {e}")
+        finally:
+            conn.close()
 
     def get_all_payments(
         self,
