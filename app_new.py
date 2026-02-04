@@ -58,4 +58,4 @@ def payments_report():
 
 # Run the app
 if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(title='Silver Jewellery Studio Tracker', port=8080, reload=False)
+    ui.run(title='Silver Jewellery Studio Tracker', port=8080, reload=True)
