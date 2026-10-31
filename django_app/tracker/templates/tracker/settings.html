@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Studio</p>
+    <h1>Settings</h1>
+    <p class="lede">Add a shortcut to this studio on your iPad Home Screen.</p>
+  </div>
+</div>
+
+<section class="panel">
+  <header><h3>Daily OneDrive backup</h3></header>
+  <div class="body">
+    <p>Choose a folder inside OneDrive that is synced on this laptop. Enter the <strong>local folder path</strong>, not a web link. For example, on Windows it may look like <code>C:\Users\Liz\OneDrive\Silver Bird Backups</code>; on a Mac, <code>~/Library/CloudStorage/OneDrive-.../Silver Bird Backups</code>.</p>
+    <form method="post">
+      {% csrf_token %}
+      {{ backup_form.as_div }}
+      <button type="submit">Save folder and back up now</button>
+    </form>
+    {% if has_backup_directory %}
+    <form method="post" class="spaced">
+      {% csrf_token %}
+      <input type="hidden" name="backup_directory" value="">
+      <button type="submit" class="small ghost">Turn off OneDrive copy</button>
+    </form>
+    {% endif %}
+    <p class="sub-text">Saving a folder immediately makes a test backup there. After that, the first time you open the app each day triggers a copy; starting the app also makes a backup. Keep the laptop awake and OneDrive signed in and syncing until the copy completes. Backups also remain in the app's local backups folder.</p>
+    {% if last_backup_date %}<p class="sub-text">Last successful OneDrive copy: <strong>{{ last_backup_date|date:"j F Y" }}</strong>.</p>{% else %}<p class="sub-text">No successful OneDrive copy yet.</p>{% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <header><h3>Open the studio on your iPad</h3></header>
+  <div class="body">
+    <ol>
+      <li>Connect the iPad to the <strong>same Wi-Fi</strong> as the laptop.</li>
+      <li>Start the studio on the laptop and leave it running. The start window shows the address to use on the iPad.</li>
+      {% if studio_hostname %}
+      <li>On the iPad, open <strong>Safari</strong> and try <code>http://{{ studio_hostname }}:8000</code>.</li>
+      {% else %}
+      <li>On the iPad, open <strong>Safari</strong> and try the Windows laptop name shown in its start window, followed by <code>:8000</code>; for example <code>http://LIZ-LAPTOP:8000</code>.</li>
+      {% endif %}
+    </ol>
+    {% if studio_lan_ip %}
+    <p class="note">This laptop's current iPad address: <strong><code>http://{{ studio_lan_ip }}:8000</code></strong></p>
+    {% endif %}
+    {% if studio_hostname %}<p class="sub-text">If the short computer name does not open on the iPad, try <code>http://{{ studio_hostname }}.local:8000</code>. Name lookup depends on Windows and your Wi-Fi router; if neither name works, use the laptop's Wi-Fi address and reserve it in the router below.</p>{% endif %}
+    <p class="sub-text">Do not use <code>localhost</code> on the iPad; that means the iPad itself. On Windows, start the studio with <code>start_windows.bat</code>. Its launcher temporarily prevents automatic sleep while the app runs, then releases the setting when you stop it; the screen can still turn off. Keep the laptop lid open, since closing it may force sleep.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <header><h3>Keep the address the same</h3></header>
+  <div class="body">
+    <p>The Windows computer name may stay the same, but not every home router lets the iPad find devices by name. A <strong>DHCP reservation</strong> (also called address reservation or static lease) is the most reliable way to keep the iPad address fixed:</p>
+    <ol>
+      <li>Open your router's app or admin page and find <strong>Connected devices</strong> or <strong>DHCP reservations</strong>.</li>
+      <li>Select this laptop from the device list. If needed, find its Wi-Fi IPv4 address in the laptop's start window or with <code>ipconfig</code> on Windows.</li>
+      <li>Save the reservation. Then use <code>http://reserved-address:8000</code> in iPad Safari and add that page to the Home Screen.</li>
+    </ol>
+    <p class="sub-text">A reservation tells the router to keep giving this laptop the same address. It is safer than manually setting an arbitrary address on the laptop. Both devices still need to be on the same Wi-Fi. You need access to the router to make this one-time change. If Windows Firewall asks, allow the studio on private/home networks so the iPad can connect.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <header><h3>Add an icon to the Home Screen</h3></header>
+  <div class="body">
+    <ol>
+      <li>Once the studio is open in Safari at the reserved address, tap <strong>Share</strong> (the square with the up arrow).</li>
+      <li>Tap <strong>Add to Home Screen</strong>. If you see <strong>Open as Web App</strong>, turn it on.</li>
+      <li>Tap <strong>Add</strong>. The icon will open the studio in an app-like window.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="panel">
+  <header><h3>Studio data</h3></header>
+  <div class="body">
+    <p class="sub-text">Manage the studio's students, classes, materials and other records.</p>
+    <p class="sub-text">The live database and local backups are kept in <code>{{ data_dir }}</code>. Don't put this folder in OneDrive – syncing can damage a database while it's in use. Use the OneDrive backup copy above instead.</p>
+    <a role="button" class="small" href="{% url 'admin:index' %}">Manage studio data</a>
+  </div>
+</section>
+{% endblock %}

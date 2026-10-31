@@ -15,7 +15,7 @@
     <tbody>
     {% for st in rows %}
       <tr>
-        <td><a href="{{ st.student.get_absolute_url }}"><strong>{{ st.student.name }}</strong></a>{% if st.student.email %}<span class="sub-text">{{ st.student.email }}</span>{% endif %}</td>
+        <td><a href="{{ st.student.get_absolute_url }}"><strong>{{ st.student.name }}</strong></a>{% if st.student.is_archived %} <span class="badge inactive">Archived</span>{% endif %}{% if st.student.email %}<span class="sub-text">{{ st.student.email }}</span>{% endif %}</td>
         <td>{{ st.student.class_name|default:"–" }}</td>
         <td class="num owes">{{ st.owed|gbp }}</td>
         <td class="covers-cell">{% for item in st.items|slice:":3" %}{{ item.label }}{% if not forloop.last %}; {% endif %}{% endfor %}{% if st.items|length > 3 %} <span class="unit">+{{ st.items|length|add:"-3" }} more</span>{% endif %}</td>

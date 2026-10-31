@@ -6,7 +6,8 @@ def backfill(apps, schema_editor):
     StudioClass = apps.get_model("tracker", "StudioClass")
     Purchase = apps.get_model("tracker", "Purchase")
     existing = set(StudioClass.objects.values_list("name", flat=True))
-    names = sorted(set(Student.objects.exclude(class_name="").values_list("class_name", flat=True)) - existing)
+    students = Student.objects.filter(is_sales_channel=False).exclude(class_name="")
+    names = sorted(set(students.values_list("class_name", flat=True)) - existing)
     start = StudioClass.objects.count()
     StudioClass.objects.bulk_create(StudioClass(name=n, sort_order=start + i) for i, n in enumerate(names))
     for purchase in Purchase.objects.select_related("student"):

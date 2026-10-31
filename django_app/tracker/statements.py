@@ -4,8 +4,9 @@ from decimal import Decimal
 from urllib.parse import quote
 
 from django.conf import settings
+from django.db.models import Prefetch
 
-from .models import ZERO, Student
+from .models import ZERO, Purchase, Student
 
 
 @dataclass
@@ -51,14 +52,25 @@ class Statement:
 
 
 def describe(item) -> str:
-    """"Jump rings × 12" or "Silver sheet, 2.5g" – quantities only, never prices."""
+    """"Jump rings × 12" or "Silver sheet, 2.5g" – quantities only, never prices (orders show their amount)."""
+    if item.get("kind") == "order":
+        return f"{item['name']}, £{item['quantity']:,.2f}"
     qty = f"{item['quantity'].normalize():f}"
     suffix = {"gram": "g", "cm": "cm", "mm": "mm"}.get(item["unit"])
     return f"{item['name']}, {qty}{suffix}" if suffix else f"{item['name']} × {qty}"
 
 
+def with_history(students):
+    """Load every student's purchases (with materials) and payments in two queries, for statement_for."""
+    return students.prefetch_related(
+        Prefetch("purchases", queryset=Purchase.objects.select_related("material").order_by("purchase_date", "id")),
+        "payments",
+    )
+
+
 def statement_for(student) -> Statement:
-    purchases = list(student.purchases.select_related("material").order_by("purchase_date", "id"))
+    """Load students through with_history() first, or this costs a query per purchase."""
+    purchases = sorted(student.purchases.all(), key=lambda p: (p.purchase_date, p.id))
     paid = sum((p.amount for p in student.payments.all()), ZERO)
     charged = sum((p.total_cost for p in purchases), ZERO)
     statement = Statement(student=student)
@@ -77,7 +89,8 @@ def statement_for(student) -> Statement:
         remaining = ZERO
         key = purchase.material_id
         if key not in grouped:
-            grouped[key] = {"name": purchase.material.name, "quantity": ZERO, "unit": purchase.material.unit_type}
+            grouped[key] = {"name": purchase.material.name, "quantity": ZERO, "unit": purchase.material.unit_type,
+                            "kind": purchase.material.kind}
         grouped[key]["quantity"] += purchase.quantity
     statement.items = [dict(item, label=describe(item)) for item in grouped.values()]
     return statement

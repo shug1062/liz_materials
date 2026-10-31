@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Materials</p>
+    <h1>Choose silver materials</h1>
+    <p class="lede">Silver materials are costed at the silver price on the day of each sale and appear under “Silver only” in Reports.</p>
+  </div>
+</div>
+
+{% if n_suggested %}
+<p class="note">{{ n_suggested }} likely silver material{{ n_suggested|pluralize }} {{ n_suggested|pluralize:"is,are" }} ticked for you and marked <span class="badge suggested">Suggested</span> – nothing is saved until you press Save. Untick anything that isn’t silver.</p>
+{% endif %}
+
+<form method="post">
+  {% csrf_token %}
+  {% regroup materials by category as by_category %}
+  {% for group in by_category %}
+  <section class="panel">
+    <header>
+      <label class="checkbox-row group-tick"><input type="checkbox" data-check-group="{{ forloop.counter }}" aria-label="Tick every material in {{ group.grouper|default:'Uncategorised' }}">
+        <h3 class="capitalise">{{ group.grouper|default:"Uncategorised" }}</h3></label>
+      <span class="sub-text">Tick the box to mark the whole category</span>
+    </header>
+    <div class="body silver-list">
+      {% for m in group.list %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="silver" value="{{ m.pk }}" data-group="{{ forloop.parentloop.counter }}" {% if m.is_silver or m.suggested %}checked{% endif %}>
+        <span>{{ m.name }}{% if not m.is_active %} <span class="badge inactive">Hidden</span>{% endif %}{% if m.suggested %} <span class="badge suggested">Suggested</span>{% endif %}</span>
+        <span class="unit">{{ m.base_price|gbp }}{% if m.pricing_type != "fixed" %} per gram{% endif %}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+  <div class="form-actions sticky-actions">
+    <a role="button" class="ghost" href="{% url 'tracker:material_list' %}">Cancel</a>
+    <button type="submit">Save silver ticks</button>
+  </div>
+</form>
+{% endblock %}

@@ -62,7 +62,7 @@ class Student(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        if self.class_name and not StudioClass.objects.filter(name=self.class_name).exists():
+        if self.class_name and not self.is_sales_channel and not StudioClass.objects.filter(name=self.class_name).exists():
             StudioClass.objects.create(name=self.class_name, sort_order=StudioClass.objects.count())
 
     def get_absolute_url(self):
@@ -111,6 +111,15 @@ class StudioClass(models.Model):
         return [c.name for c in classes]
 
 
+class StudioSettings(models.Model):
+    backup_directory = models.CharField(max_length=1000, blank=True, null=True)
+    last_backup_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "studio settings"
+        verbose_name_plural = "studio settings"
+
+
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     sort_order = models.PositiveIntegerField(default=0)
@@ -124,6 +133,11 @@ class Category(models.Model):
 
 
 class Material(models.Model):
+    class Kind(models.TextChoices):
+        MATERIAL = "material", "Material"
+        LESSON = "lesson", "Lesson fee"
+        ORDER = "order", "Order at cost (type the amount)"
+
     class PricingType(models.TextChoices):
         FIXED = "fixed", "Fixed price (pack / item)"
         PER_GRAM = "per_gram", "Per gram (bulk)"
@@ -132,6 +146,8 @@ class Material(models.Model):
     UNIT_CHOICES = [(u, u) for u in ("item", "gram", "piece", "sheet", "cm", "mm")]
 
     name = models.CharField(max_length=200)
+    kind = models.CharField("type", max_length=20, choices=Kind.choices, default=Kind.MATERIAL,
+                            help_text="Lesson fees and orders at cost are kept out of materials profit.")
     category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL)
     unit_type = models.CharField(max_length=20, choices=UNIT_CHOICES, default="item")
     pricing_type = models.CharField(max_length=20, choices=PricingType.choices, default=PricingType.FIXED)
@@ -143,10 +159,17 @@ class Material(models.Model):
         "weight per item (g)", max_digits=10, decimal_places=4, null=True, blank=True
     )
     markup_percentage = models.DecimalField("markup %", max_digits=6, decimal_places=2, default=ZERO)
+    markup_ok = models.BooleanField("low markup is deliberate", default=False,
+                                    help_text="Don't warn about a thin margin unless silver prices mean selling at a loss.")
     supplier = models.CharField(max_length=100, blank=True, default="Cooksongold")
     supplier_url = models.URLField(max_length=500, blank=True)
     is_active = models.BooleanField("active", default=True, help_text="Inactive materials are hidden from new purchases.")
     is_favourite = models.BooleanField("quick button", default=False, help_text="Show as a quick button in class mode.")
+    is_silver = models.BooleanField("silver", default=False, help_text="Cost follows the silver price on the day of each sale.")
+    in_silver_report = models.BooleanField("count in silver report", default=False,
+                                           help_text="Include in the silver used by class report on the Reports page.")
+    price_date = models.DateField("price date", default=timezone.localdate,
+                                  help_text="When the supplier price was last checked.")
     sort_order = models.PositiveIntegerField(default=0)
     notes = models.TextField(blank=True)
     last_updated = models.DateTimeField(auto_now=True)
@@ -201,6 +224,8 @@ class Purchase(models.Model):
     unit_cost = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
     cost_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     cost_is_estimate = models.BooleanField(default=False, help_text="Worked out from price ÷ markup (recorded before costs were saved).")
+    silver_rate = models.DecimalField("silver £/kg", max_digits=10, decimal_places=2, null=True, blank=True,
+                                      help_text="Silver price on the day of sale, used for the cost of silver materials.")
     # The student's class when they bought it, so moving class next term doesn't move past sales.
     class_name = models.CharField("class", max_length=100, blank=True)
     purchase_date = models.DateField(default=timezone.localdate)
@@ -216,6 +241,9 @@ class Purchase(models.Model):
     def save(self, *args, **kwargs):
         if self._state.adding and not self.class_name:
             self.class_name = self.student.class_name
+        if self.material.is_silver and self.quantity is not None:
+            from . import silver
+            silver.apply(self)
         super().save(*args, **kwargs)
 
     def set_price(self, reprice: bool):
@@ -279,6 +307,7 @@ class PriceChange(models.Model):
 class SilverPrice(models.Model):
     price_per_kg = models.DecimalField(max_digits=10, decimal_places=2)
     fetched_at = models.DateTimeField(default=timezone.now)
+    source = models.CharField(max_length=20, default="cooksongold")
 
     class Meta:
         ordering = ["-fetched_at"]

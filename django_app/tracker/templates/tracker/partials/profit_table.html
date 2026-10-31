@@ -13,7 +13,7 @@
       <td class="num">{% if r.margin is not None %}{{ r.margin|floatformat:0 }}%{% else %}–{% endif %}</td>
     </tr>
   {% empty %}
-    <tr><td colspan="6" class="empty">No purchases in this period.</td></tr>
+    <tr><td colspan="6" class="empty">No {% if silver_only and first == "Class" %}silver {% endif %}purchases in this period.</td></tr>
   {% endfor %}
   </tbody>
 </table>

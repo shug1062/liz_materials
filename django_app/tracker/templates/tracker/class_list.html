@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Courses &amp; terms</p>
+    <h1>Classes</h1>
+    <p class="lede">Drag to reorder. Classes with an end date in the past count as finished.</p>
+  </div>
+  <div class="btn-row">
+    {% if n_archived %}<a role="button" class="ghost" href="{% url 'tracker:archived_students' %}">Archived students ({{ n_archived }})</a>{% endif %}
+    <a role="button" class="ghost" href="{% url 'tracker:class_dates' %}">Set term dates</a>
+    <a role="button" href="{% url 'tracker:class_add' %}">+ New class</a>
+  </div>
+</div>
+
+{% if n_candidates %}
+<div class="note archive-note">
+  <span>{{ n_candidates }} student{{ n_candidates|pluralize }} {% if n_candidates == 1 %}isn't{% else %}aren't{% endif %} in a current or upcoming class.</span>
+  <a role="button" class="small ghost" href="{% url 'tracker:archive_students' %}">Review &amp; archive…</a>
+</div>
+{% endif %}
+
+<div id="save-status" aria-live="polite"></div>
+<section class="panel">
+  <form data-sortable class="sortable-list" hx-post="{% url 'tracker:class_reorder' %}" hx-trigger="end" hx-target="#save-status">
+    {% for c in classes %}
+      <div class="sortable-item class-row">
+        <span class="handle" aria-hidden="true">⠿</span>
+        <input type="hidden" name="class_name" value="{{ c.name }}">
+        <a href="{{ c.get_absolute_url }}" class="class-row-name">{{ c.name }}</a>
+        <span class="badge status-{{ c.status }}">{{ c.status|capfirst }}</span>
+        <span class="unit">{% if c.start_date or c.end_date %}{{ c.start_date|date:"j M Y"|default:"…" }} – {{ c.end_date|date:"j M Y"|default:"ongoing" }}{% endif %}</span>
+        <span class="class-row-count">{{ c.n_students }} student{{ c.n_students|pluralize }}</span>
+      </div>
+    {% empty %}
+      <p class="empty">No classes yet.</p>
+    {% endfor %}
+  </form>
+</section>
+{% endblock %}

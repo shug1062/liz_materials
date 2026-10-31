@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.db.models.deletion import ProtectedError
 
-from .models import Category, ClassOrder, Material, Payment, Project, Purchase, Student
+from .models import Category, Material, Payment, Project, Purchase, Student, StudioClass
 
 
 class PurchaseInline(admin.TabularInline):
@@ -21,8 +21,8 @@ class PaymentInline(admin.TabularInline):
 
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ("name", "class_name", "is_sales_channel", "email", "phone")
-    list_filter = ("is_sales_channel", "class_name")
+    list_display = ("name", "class_name", "is_sales_channel", "is_archived", "email", "phone")
+    list_filter = ("is_archived", "is_sales_channel", "class_name")
     search_fields = ("name", "email", "phone", "class_name")
     inlines = [PurchaseInline, PaymentInline]
 
@@ -35,9 +35,9 @@ class StudentAdmin(admin.ModelAdmin):
         super().save_formset(request, form, formset, change)
 
 
-@admin.register(ClassOrder)
-class ClassOrderAdmin(admin.ModelAdmin):
-    list_display = ("class_name", "sort_order")
+@admin.register(StudioClass)
+class StudioClassAdmin(admin.ModelAdmin):
+    list_display = ("name", "start_date", "end_date", "sort_order")
     list_editable = ("sort_order",)
 
 

@@ -8,7 +8,7 @@
     <div class="avatar" aria-hidden="true">{{ student.name|slice:":1"|upper }}</div>
     <div>
       <p class="eyebrow">{% if student.is_sales_channel %}Sales channel{% else %}{{ student.class_name|default:"Student" }}{% endif %}</p>
-      <h1>{{ student.name }}</h1>
+      <h1>{{ student.name }}{% if student.is_archived %} <span class="badge inactive">Archived</span>{% endif %}</h1>
       <div class="contact">
         {% if student.email %}<a href="mailto:{{ student.email }}">{{ student.email }}</a>{% endif %}
         {% if student.phone %}<a href="tel:{{ student.phone }}">{{ student.phone }}</a>{% endif %}
@@ -43,6 +43,10 @@
 
 <div class="btn-row footer-actions">
   <a role="button" class="small ghost" href="{% url 'tracker:student_edit' student.pk %}">Edit details</a>
+  <a role="button" class="small ghost" href="{% url 'tracker:student_merge' student.pk %}">Merge with another record…</a>
+  <form method="post" action="{% url 'tracker:student_archive' student.pk %}" class="inline">
+    {% csrf_token %}<button class="small ghost">{% if student.is_archived %}Restore student{% else %}Archive student{% endif %}</button>
+  </form>
   <form method="post" action="{% url 'tracker:student_delete' student.pk %}" class="inline"
         onsubmit="return confirm('Delete {{ student.name|escapejs }} and ALL their purchases and payments? This cannot be undone.');">
     {% csrf_token %}<button class="small danger-ghost">Delete student</button>

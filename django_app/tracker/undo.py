@@ -12,12 +12,13 @@ SESSION_KEY = "undo"
 UNDO_WINDOW = timedelta(minutes=15)
 
 
-def remember(request, label, created=(), deleted=()):
+def remember(request, label, created=(), restore=()):
+    """created: objects to delete on undo. restore: objects (deleted or about to change) to put back as they are now."""
     request.session[SESSION_KEY] = {
         "id": uuid.uuid4().hex,
         "label": label,
         "created": [[obj._meta.label, obj.pk] for obj in created],
-        "deleted": serializers.serialize("json", deleted),
+        "restore": serializers.serialize("json", restore),
         "at": timezone.now().isoformat(),
         "shown": False,
     }
@@ -40,7 +41,7 @@ def undo(request, undo_id) -> str | None:
     with transaction.atomic():
         for label, pk in data["created"]:
             apps.get_model(label).objects.filter(pk=pk).delete()
-        for restored in serializers.deserialize("json", data["deleted"]):
+        for restored in serializers.deserialize("json", data["restore"]):
             restored.save()
     del request.session[SESSION_KEY]
     return data["label"]

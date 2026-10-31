@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb" href="{{ student.get_absolute_url }}">← {{ student.name }}</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Tidy up duplicates</p>
+    <h1>Merge {{ student.name }}{% if student.class_name %} <span class="unit">({{ student.class_name }})</span>{% endif %}</h1>
+    <p class="lede">Use this when one person has two records. Everything on this record moves to the one you keep, then this record is removed. You can undo it straight afterwards.</p>
+  </div>
+</div>
+
+{% if into %}
+<section class="panel form-card">
+  <header><h3>Check before merging</h3></header>
+  <div class="body">
+    <table>
+      <thead><tr><th></th><th>Removed</th><th>Kept</th></tr></thead>
+      <tbody>
+        <tr><th>Name</th><td>{{ student.name }}</td><td><strong>{{ into.name }}</strong></td></tr>
+        <tr><th>Class</th><td>{{ student.class_name|default:"–" }}</td><td><strong>{{ into.class_name|default:"–" }}</strong></td></tr>
+        <tr><th>Email</th><td>{{ student.email|default:"–" }}</td><td><strong>{{ into.email|default:student.email|default:"–" }}</strong></td></tr>
+        <tr><th>Purchases</th><td>{{ student.total_purchases|gbp }}</td><td>{{ into.total_purchases|gbp }}</td></tr>
+        <tr><th>Payments</th><td>{{ student.total_payments|gbp }}</td><td>{{ into.total_payments|gbp }}</td></tr>
+      </tbody>
+    </table>
+    <p>All of {{ student.name }}’s purchases and payments will move to <strong>{{ into.name }}{% if into.class_name %} ({{ into.class_name }}){% endif %}</strong>. Past sales still count towards the class they were bought in.</p>
+  </div>
+  <form method="post" class="form-actions">
+    {% csrf_token %}<input type="hidden" name="into" value="{{ into.pk }}">
+    <a role="button" class="ghost" href="{% url 'tracker:student_merge' student.pk %}">Back</a>
+    <button type="submit">Merge into {{ into.name }}</button>
+  </form>
+</section>
+{% else %}
+<section class="panel form-card">
+  <header><h3>Which record should this be merged into?</h3></header>
+  <form method="get">
+    <div class="body">
+      {% if same_name %}
+      <p class="sub-text">Same name:</p>
+      {% for s in same_name %}
+        <label class="checkbox-row"><input type="radio" name="into" value="{{ s.pk }}" {% if forloop.first %}checked{% endif %}>
+          <span><strong>{{ s.name }}</strong> – {{ s.class_name|default:"no class" }}{% if s.is_archived %} <span class="badge inactive">Archived</span>{% endif %}
+          <span class="unit">· bought {{ s.total_purchases|gbp }}</span></span></label>
+      {% endfor %}
+      <p class="sub-text spaced">Or someone else:</p>
+      {% endif %}
+      <select name="into" aria-label="Student to keep" {% if same_name %}onchange="this.form.querySelectorAll('input[name=into]').forEach(r => r.checked = false)"{% endif %}>
+        <option value="">{% if same_name %}– choose a different student –{% else %}Choose the student to keep{% endif %}</option>
+        {% for s in others %}<option value="{{ s.pk }}">{{ s.name }}{% if s.class_name %} – {{ s.class_name }}{% endif %}{% if s.is_archived %} (archived){% endif %}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ student.get_absolute_url }}">Cancel</a>
+      <button type="submit">Next</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

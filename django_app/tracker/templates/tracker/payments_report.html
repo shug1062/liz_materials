@@ -18,7 +18,10 @@
       </div>
       <noscript><button type="submit">Apply</button></noscript>
     </form>
-    <a href="{% url 'tracker:payments_report' %}" class="small">Clear filters</a>
+    <div class="btn-row">
+      <a href="{% url 'tracker:payments_report' %}" class="small">This tax year ({{ tax_year }})</a>
+      <a href="{% url 'tracker:payments_report' %}?all=1" class="small">Show all payments</a>
+    </div>
   </div>
 </section>
 <div id="payments">{% include "tracker/partials/payments_table.html" %}</div>

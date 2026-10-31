@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="crumb" href="{% url 'tracker:class_list' %}">← Classes</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Classes</p>
+    <h1>Set term dates</h1>
+    <p class="lede">Tick the classes that share a term, enter the dates and save. Classes whose end date has passed count as finished, so their students show up in “Review &amp; archive”. Leave a date blank to keep what’s there.</p>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel">
+    <figure>
+    <table>
+      <thead><tr><th></th><th>Class</th><th>Now</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for c in classes %}
+        <tr>
+          <td><input type="checkbox" name="studio_class" value="{{ c.pk }}" id="class-{{ c.pk }}"{% if c.pk in chosen %} checked{% endif %}></td>
+          <td><label for="class-{{ c.pk }}">{{ c.name }}</label></td>
+          <td class="unit">{% if c.start_date or c.end_date %}{{ c.start_date|date:"j M Y"|default:"…" }} – {{ c.end_date|date:"j M Y"|default:"ongoing" }}{% else %}No dates{% endif %}</td>
+          <td><span class="badge status-{{ c.status }}">{{ c.status|capfirst }}</span></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="empty">No classes yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </figure>
+    <div class="body">
+      <div class="grid">
+        <div>{{ form.start.errors }}<label>{{ form.start.label }} {{ form.start }}</label></div>
+        <div>{{ form.end.errors }}<label>{{ form.end.label }} {{ form.end }}</label></div>
+      </div>
+      <p class="helptext">Tip: for “Previous student”, set just an end date in the past – those students then appear in “Review &amp; archive”, where you choose who to archive.</p>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{% url 'tracker:class_list' %}">Cancel</a>
+      <button type="submit">Save dates for ticked classes</button>
+    </div>
+  </section>
+</form>
+{% endblock %}

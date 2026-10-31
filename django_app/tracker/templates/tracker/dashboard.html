@@ -7,8 +7,7 @@
     <h1>Dashboard</h1>
   </div>
   <div class="btn-row">
-    <a role="button" href="{% url 'tracker:class_mode' %}">Start class mode</a>
-    <a role="button" class="ghost" href="{% url 'tracker:purchase_new' %}">Record purchase</a>
+    <a role="button" href="{% url 'tracker:purchase_new' %}">Record purchase</a>
     <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}">Record payment</a>
   </div>
 </div>
@@ -17,7 +16,7 @@
   <div class="stat sapphire">
     <div class="label"><span class="gem"></span>Class payments</div>
     <div class="value">{{ class_totals.total|gbp }}</div>
-    <div class="detail">Cash <strong>{{ class_totals.cash|gbp }}</strong> · Card <strong>{{ class_totals.card|gbp }}</strong></div>
+    {% include "tracker/partials/method_breakdown.html" with totals=class_totals %}
   </div>
   <div class="stat ruby">
     <div class="label"><span class="gem"></span>Owed by students</div>
@@ -48,13 +47,13 @@
   <div class="stat steel compact">
     <div class="label"><span class="gem"></span><a href="{{ channel.get_absolute_url }}">{{ channel.name }}</a></div>
     <div class="value">{{ totals.total|gbp }}</div>
-    <div class="detail">Cash <strong>{{ totals.cash|gbp }}</strong> · Card <strong>{{ totals.card|gbp }}</strong></div>
+    {% include "tracker/partials/method_breakdown.html" %}
   </div>
   {% endfor %}
   <div class="stat compact neutral">
     <div class="label"><span class="gem"></span>All sales</div>
     <div class="value">{{ sales_totals.total|gbp }}</div>
-    <div class="detail">Cash <strong>{{ sales_totals.cash|gbp }}</strong> · Card <strong>{{ sales_totals.card|gbp }}</strong></div>
+    {% include "tracker/partials/method_breakdown.html" with totals=sales_totals %}
   </div>
 </section>
 {% endif %}

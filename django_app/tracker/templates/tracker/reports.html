@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Private · not shown in class mode</p>
+    <h1>Reports</h1>
+    <p class="lede">Money received each month and the profit on materials sold. Download a spreadsheet for your tax return.</p>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="body">
+    <div class="chips presets">
+      {% for label, p_start, p_end in presets %}
+        <a class="chip{% if p_start == start and p_end == end %} selected{% endif %}" href="?{% if p_start %}start={{ p_start|date:'Y-m-d' }}&amp;end={{ p_end|date:'Y-m-d' }}{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    <form method="get">
+      <div class="filters">
+        <label>From {{ form.start }}</label>
+        <label>To {{ form.end }}</label>
+        <div class="btn-row filter-buttons"><button type="submit" class="small">Show</button></div>
+      </div>
+      {% if silver_only %}<input type="hidden" name="by_class" value="silver">{% endif %}
+    </form>
+    <p class="period">{% if start or end %}Showing {% if start %}{{ start|date:"j M Y" }}{% else %}the beginning{% endif %} to {% if end %}{{ end|date:"j M Y" }}{% else %}today{% endif %}.{% else %}Showing all time.{% endif %}</p>
+  </div>
+</section>
+
+<section class="stats spaced">
+  <div class="stat emerald"><div class="label"><span class="gem"></span>Money received</div><div class="value">{{ income.total|gbp }}</div>
+    <div class="detail">Cash {{ income.cash|gbp }} · Card {{ income.card|gbp }}{% if other_income %} · Other {{ other_income|gbp }}{% endif %}</div></div>
+  <div class="stat sapphire"><div class="label"><span class="gem"></span>Materials sold</div><div class="value">{{ total.sales|gbp }}</div><div class="detail">{{ n_purchases }} purchase{{ n_purchases|pluralize }}</div></div>
+  <div class="stat steel"><div class="label"><span class="gem"></span>Materials cost</div><div class="value">{{ total.cost|gbp }}</div></div>
+  <div class="stat {% if total.profit < 0 %}ruby{% else %}amethyst{% endif %}"><div class="label"><span class="gem"></span>Profit on materials</div><div class="value">{{ total.profit|gbp }}</div><div class="detail">{% if total.margin is not None %}{{ total.margin|floatformat:0 }}% of sales{% else %}–{% endif %}</div></div>
+  <div class="stat neutral"><div class="label"><span class="gem"></span>Lesson fees</div><div class="value">{{ lesson_fees|gbp }}</div>
+    <div class="detail">Orders at cost {{ orders_at_cost|gbp }} (passed straight through, no profit)</div></div>
+</section>
+
+<section class="panel">
+  <header><h3>Download for your tax return</h3></header>
+  <div class="body">
+    <p class="sub-text">Spreadsheet (CSV) files open in Excel or Numbers and cover the period shown above.</p>
+    <div class="btn-row">
+      <a role="button" class="small" href="{% url 'tracker:reports_csv' 'monthly' %}{% if query %}?{{ query }}{% endif %}" download>Monthly summary</a>
+      <a role="button" class="small ghost" href="{% url 'tracker:reports_csv' 'payments' %}{% if query %}?{{ query }}{% endif %}" download>Every payment</a>
+      <a role="button" class="small ghost" href="{% url 'tracker:reports_csv' 'sales' %}{% if query %}?{{ query }}{% endif %}" download>Every sale (materials, lessons, orders)</a>
+    </div>
+  </div>
+</section>
+
+{% if n_estimated %}
+<p class="note">{{ n_estimated }} older purchase{{ n_estimated|pluralize }} recorded before costs were saved use an estimated cost (price charged with the markup taken off). Everything recorded from now on uses the actual cost at the time.</p>
+{% endif %}
+{% if n_silver_rated or n_silver_unrated %}
+<p class="note">Silver sales are costed at the silver price on the day of the sale.
+  {% if n_silver_unrated %}{{ n_silver_unrated }} silver sale{{ n_silver_unrated|pluralize }} {{ n_silver_unrated|pluralize:"is,are" }} from before the first silver price on record, so {{ n_silver_unrated|pluralize:"it uses,they use" }} the cost at the time – <a href="{% url 'tracker:price_history' %}#silver">add past silver prices</a> to fix this.{% endif %}</p>
+{% endif %}
+
+<section class="panel">
+  <header><h3>By month</h3></header>
+  <figure>
+  <table class="monthly-table">
+    <thead>
+      <tr><th>Month</th><th class="num">Cash</th><th class="num">Card</th><th class="num">Other</th><th class="num">Received</th>
+          <th class="num">Materials sold</th><th class="num">Cost</th><th class="num">Profit</th>
+          <th class="num">Lesson fees</th><th class="num">Orders at cost</th></tr>
+    </thead>
+    <tbody>
+    {% for m in by_month %}
+      <tr>
+        <td class="nowrap">{{ m.month|date:"F Y" }}</td>
+        <td class="num">{{ m.cash|gbp }}</td>
+        <td class="num">{{ m.card|gbp }}</td>
+        <td class="num">{% if m.other %}{{ m.other|gbp }}{% else %}–{% endif %}</td>
+        <td class="num"><strong>{{ m.income|gbp }}</strong></td>
+        <td class="num">{{ m.sales|gbp }}</td>
+        <td class="num">{{ m.cost|gbp }}</td>
+        <td class="num"><strong class="{% if m.profit < 0 %}owes{% else %}credit{% endif %}">{{ m.profit|gbp }}</strong></td>
+        <td class="num">{% if m.lessons %}{{ m.lessons|gbp }}{% else %}–{% endif %}</td>
+        <td class="num">{% if m.orders %}{{ m.orders|gbp }}{% else %}–{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="10" class="empty">Nothing recorded in this period.</td></tr>
+    {% endfor %}
+    </tbody>
+    {% if by_month|length > 1 %}
+    <tfoot>
+      <tr><th>Total</th><th class="num">{{ income.cash|gbp }}</th><th class="num">{{ income.card|gbp }}</th><th class="num">{{ other_income|gbp }}</th>
+          <th class="num">{{ income.total|gbp }}</th><th class="num">{{ total.sales|gbp }}</th><th class="num">{{ total.cost|gbp }}</th><th class="num">{{ total.profit|gbp }}</th>
+          <th class="num">{{ lesson_fees|gbp }}</th><th class="num">{{ orders_at_cost|gbp }}</th></tr>
+    </tfoot>
+    {% endif %}
+  </table>
+  </figure>
+</section>
+
+<div class="report-grid">
+  <section class="panel" id="by-class">
+    <header><h3>Materials profit by class</h3>
+      <span class="toggle" role="group" aria-label="Materials to include">{% for label, url, selected in scope_links %}<a href="{{ url }}"{% if selected %} class="selected" aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}</span>
+    </header>
+    {% include "tracker/partials/profit_table.html" with rows=by_class first="Class" %}
+  </section>
+  <section class="panel">
+    <header><h3>Materials profit by material</h3></header>
+    {% include "tracker/partials/profit_table.html" with rows=by_material first="Material" show_quantity=True %}
+  </section>
+</div>
+{% endblock %}

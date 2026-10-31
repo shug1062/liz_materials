@@ -1,7 +1,15 @@
 {% load money %}{% for m in materials %}
+{% if m.kind == "order" %}
+<button type="button" class="tile material-tile" data-add data-amount data-id="{{ m.pk }}" data-name="{{ m.name }}"
+        data-price="1" data-unit="£ amount" data-step="1">
+  <span class="tile-name">{{ m.name }}</span>
+  <span class="tile-price"><span class="unit">Type the amount</span></span>
+</button>
+{% else %}
 <button type="button" class="tile material-tile" data-add data-id="{{ m.pk }}" data-name="{{ m.name }}"
         data-price="{{ m.final_price }}" data-unit="{{ m.unit_type }}" data-step="{% if m.is_counted %}1{% else %}0.5{% endif %}">
   <span class="tile-name">{{ m.name }}</span>
   <span class="tile-price">{{ m.final_price|gbp }} <span class="unit">per {{ m.unit_type }}</span></span>
 </button>
+{% endif %}
 {% empty %}{% if searching %}<p class="empty">Nothing matches – try fewer words.</p>{% endif %}{% endfor %}

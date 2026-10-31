@@ -23,20 +23,26 @@
           <img src="{% static 'tracker/logo.png' %}" alt="The Silver Bird logo">
           <span><span class="brand-name">The Silver Bird</span><span class="brand-sub">Studio &amp; jewellery school</span></span>
         </a>
-        <span class="today">{% now "l j F Y" %}</span>
+        <span class="bar-right">
+          <span class="today">{% now "l j F Y" %}</span>
+          {% if user.is_authenticated %}
+            {% block mode_switch %}<a role="button" class="mode-switch" href="{% url 'tracker:class_mode' %}">Switch to class mode</a>{% endblock %}
+          {% endif %}
+        </span>
       </div>
       {% block nav %}
       {% if user.is_authenticated %}
       <nav class="site-nav" aria-label="Main">
         <a href="{% url 'tracker:dashboard' %}" {% if section == "dashboard" %}class="active"{% endif %}>Dashboard</a>
-        <a href="{% url 'tracker:student_list' %}" {% if "student" in section or "class" in section %}class="active"{% endif %}>Students</a>
+        <a href="{% url 'tracker:student_list' %}" {% if "student" in section %}class="active"{% endif %}>Students</a>
+        <a href="{% url 'tracker:class_list' %}" {% if "class" in section or "archive" in section %}class="active"{% endif %}>Classes</a>
         <a href="{% url 'tracker:purchase_new' %}" {% if "purchase" in section %}class="active"{% endif %}>Record purchase</a>
         <a href="{% url 'tracker:payments_report' %}" {% if "payment" in section %}class="active"{% endif %}>Payments</a>
-        <a href="{% url 'tracker:profit_report' %}" {% if "profit" in section %}class="active"{% endif %}>Profit</a>
+        <a href="{% url 'tracker:reports' %}" {% if "report" in section %}class="active"{% endif %}>Reports</a>
         <a href="{% url 'tracker:material_list' %}" {% if "material" in section or "price" in section %}class="active"{% endif %}>Materials</a>
         <a href="{% url 'tracker:project_list' %}" {% if "project" in section %}class="active"{% endif %}>Projects</a>
         <span class="spacer"></span>
-        <a href="{% url 'admin:index' %}">Settings</a>
+        <a href="{% url 'tracker:settings' %}" {% if section == "settings" %}class="active"{% endif %}>Settings</a>
         {% if require_login %}<form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}<button class="small ghost">Log out</button></form>{% endif %}
       </nav>
       {% endif %}

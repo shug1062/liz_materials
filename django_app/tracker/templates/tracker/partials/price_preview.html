@@ -1,4 +1,9 @@
-{% load money %}{% if material %}
+{% load money %}{% if material.kind == "order" %}
+<div class="price-box">
+  <div>Order at cost: type the <strong>£ amount</strong> in the quantity box.</div>
+  {% if quantity > 0 %}<div class="total">Total {{ total|gbp }}</div>{% endif %}
+</div>
+{% elif material %}
 <div class="price-box">
   <div>Price <strong>{{ material.final_price|gbp }}</strong> per {{ material.unit_type }}</div>
   {% if quantity > 0 %}<div class="total">Total {{ total|gbp }}</div>{% endif %}

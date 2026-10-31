@@ -19,13 +19,37 @@ htmx.onLoad((content) => {
     select.addEventListener("change", show);
     show();
   });
+
+  // Material form: orders at cost have no pricing to set; lessons and orders aren't silver.
+  content.querySelectorAll("#id_kind").forEach((select) => {
+    const show = () => {
+      document.querySelectorAll("[data-hide-for-kind]").forEach((el) => {
+        el.hidden = el.dataset.hideForKind.split(" ").includes(select.value);
+      });
+    };
+    select.addEventListener("change", show);
+    show();
+  });
+
+  content.querySelectorAll("[data-check-group]").forEach(syncGroupTick);
 });
 
-// Scrolling with a trackpad/mouse over a focused number box changes its value; stop that.
-document.addEventListener("wheel", () => {
-  const el = document.activeElement;
-  if (el && el.type === "number") el.blur();
-}, { passive: true });
+// Choose silver page: a category tick-box ticks or unticks every material in it.
+function syncGroupTick(groupBox) {
+  const boxes = [...document.querySelectorAll(`[data-group="${groupBox.dataset.checkGroup}"]`)];
+  const ticked = boxes.filter((b) => b.checked).length;
+  groupBox.checked = ticked === boxes.length;
+  groupBox.indeterminate = ticked > 0 && ticked < boxes.length;
+}
+
+document.addEventListener("change", (event) => {
+  const target = event.target;
+  if (target.matches("[data-check-group]")) {
+    document.querySelectorAll(`[data-group="${target.dataset.checkGroup}"]`).forEach((b) => { b.checked = target.checked; });
+  } else if (target.matches("[data-group]")) {
+    syncGroupTick(document.querySelector(`[data-check-group="${target.dataset.group}"]`));
+  }
+});
 
 // ---------- Class mode basket ----------
 (() => {
@@ -70,7 +94,7 @@ document.addEventListener("wheel", () => {
       input.name = `qty_${id}`;
       input.value = "1";
       basket.querySelector("#basket-lines").append(line);
-      if (step !== "1") {
+      if (step !== "1" || "amount" in tile.dataset) {
         input.focus();
         input.select();
       }

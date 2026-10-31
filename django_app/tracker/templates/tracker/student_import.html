@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="crumb" href="{% url 'tracker:student_list' %}">← Students</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Students</p>
+    <h1>Import from Wix</h1>
+    <p class="lede">Fill in email addresses and phone numbers from your Wix bookings, and add anyone who isn’t here yet. Nothing changes until you check the list and press Import.</p>
+  </div>
+</div>
+
+{% if not people %}
+<section class="panel form-card">
+  <header><h3>Upload the export</h3></header>
+  <form method="post" enctype="multipart/form-data">
+    <div class="body">
+      {% csrf_token %}
+      <ol class="sub-text">
+        <li>In your Wix dashboard, open the list of bookings (or contacts) for your classes.</li>
+        <li>Choose <strong>Export</strong> and save it as a <strong>CSV</strong> file.</li>
+        <li>Choose that file here. Any export with a name column works – emails and phone numbers are picked up if they’re there.</li>
+      </ol>
+      {% if error %}<p class="errorlist">{{ error }}</p>{% endif %}
+      <label>CSV file <input type="file" name="file" accept=".csv,text/csv" required></label>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{% url 'tracker:student_list' %}">Cancel</a>
+      <button type="submit">Check the file</button>
+    </div>
+  </form>
+</section>
+{% else %}
+<form method="post">
+  {% csrf_token %}
+  <section class="panel">
+    <header><h3>{{ people|length }} {{ people|length|pluralize:"person,people" }} in the file</h3></header>
+    <div class="body">
+      <p class="sub-text">Emails and phone numbers are only added where a student doesn’t have one yet – nothing is overwritten. Tick “Use full name” to replace a first-name-only record (like “Kate”) with the full name from Wix, which makes students easier to tell apart.</p>
+      <label>Put new students in class
+        <select name="new_class"><option value="">No class</option>{% for c in class_names %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+      </label>
+    </div>
+    <figure>
+    <table class="import-table">
+      <thead><tr><th>From Wix</th><th>Booked</th><th>Who is this?</th><th>Use full name</th></tr></thead>
+      <tbody>
+      {% for p in people %}
+        <tr>
+          <td><strong>{{ p.name }}</strong>{% if p.email %}<span class="sub-text">{{ p.email }}</span>{% endif %}{% if p.phone %}<span class="sub-text">{{ p.phone }}</span>{% endif %}</td>
+          <td class="sub-text">{{ p.booked|join:", "|default:"–" }}</td>
+          <td>
+            <select name="action_{{ forloop.counter0 }}" aria-label="Who is {{ p.name }}?">
+              {% for s in p.candidates %}<option value="{{ s.pk }}"{% if p.action == s.pk|stringformat:"d" %} selected{% endif %}>{{ s.name }}{% if s.class_name %} – {{ s.class_name }}{% endif %}{% if s.email %} ({{ s.email }}){% endif %}</option>{% endfor %}
+              <option value="new"{% if p.action == "new" %} selected{% endif %}>Add as a new student</option>
+              <option value="skip"{% if p.action == "skip" %} selected{% endif %}>Skip</option>
+            </select>
+            <span class="sub-text">{{ p.reason }}</span>
+          </td>
+          <td>{% if p.candidates %}<input type="checkbox" name="rename_{{ forloop.counter0 }}" value="1" aria-label="Use {{ p.name }} as the name"{% if p.rename %} checked{% endif %}>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </figure>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{% url 'tracker:student_import' %}">Start again</a>
+      <button type="submit" name="apply" value="1">Import</button>
+    </div>
+  </section>
+</form>
+{% endif %}
+{% endblock %}

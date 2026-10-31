@@ -1,0 +1,16 @@
+{% for s in students %}
+  <tr>
+    <td><a href="{{ s.get_absolute_url }}"><strong>{{ s.name }}</strong></a>{% if s.email %}<span class="sub-text">{{ s.email }}</span>{% endif %}</td>
+    <td>{{ s.class_name|default:"–" }}</td>
+    <td class="nowrap">{{ s.archived_at|date:"j M Y"|default:"–" }}</td>
+    <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}</td>
+    <td>
+      <form method="post" action="{% url 'tracker:student_archive' s.pk %}" class="inline actions">
+        {% csrf_token %}<input type="hidden" name="next" value="{% url 'tracker:archived_students' %}">
+        <button class="small ghost">Restore</button>
+      </form>
+    </td>
+  </tr>
+{% empty %}
+  <tr><td colspan="5" class="empty">{% if q %}No archived students match “{{ q }}”.{% else %}No archived students.{% endif %}</td></tr>
+{% endfor %}

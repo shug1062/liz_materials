@@ -1,0 +1,20 @@
+<figure>
+<table>
+  <tbody>
+  {% for s in candidates %}
+    {% ifchanged s.is_archived %}{% if s.is_archived %}<tr class="divider-row"><td colspan="3">Archived students</td></tr>{% endif %}{% endifchanged %}
+    <tr {% if s.is_archived %}class="muted-row"{% endif %}>
+      <td><strong>{{ s.name }}</strong>{% if s.email %}<span class="sub-text">{{ s.email }}</span>{% endif %}</td>
+      <td class="unit">{{ s.class_name|default:"No class" }}</td>
+      <td>
+        <form method="post" action="{% url 'tracker:class_add_student' studio_class.pk s.pk %}" class="inline actions">
+          {% csrf_token %}<button class="small {% if s.is_archived %}ghost{% endif %}">Add</button>
+        </form>
+      </td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="3" class="empty">No matching students.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</figure>

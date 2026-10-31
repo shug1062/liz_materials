@@ -29,3 +29,48 @@ remember - students see the site when i'm adding purchases in classes, so i need
   - we could then have a button there for archive students that arent already enrolled in a current/future class.
   - students list could have a achived students list.
   - when adding students to a class, have the archived students at the bottom of the list and a search function to find them too.x
+
+  student see the dashboard - dont show the sales channel and amount of profit oon teh main page, have that in a seperate tab.
+
+-- is this fixed in class mode?
+
+make go into class when return back, no all groups
+when i add a purchase, eg to annes account, then i want to add a purchae to karens account it goes back to all teh classes, ratther than teh class i was it. make it go back to the class i was in as if i'm adding a purchase int hat class, i'm likely to make another purchase in that class.
+
+- 
+- **Reports:** monthly income split by cash and card, materials sold, and profit, with a spreadsheet (CSV) export for your tax return.
+- **Price history:** when silver or supplier prices change, keep the old price, and flag materials whose margin has got thin.
+
+in profits section, have the by class with teh option to show silver only, or all materials. ensure costs are using the correct daily rate of silver for the sales.
+
+on class mode, add a record payment section like the one on liz mode
+
+add the option to copy and paste materials, duplicate materials and then tweak it.
+
+
+when i'm puytting in numbers of grammes, when i try and go to the next tab, its increasing the value. this is likely when i'm scrollign on the trackpad to move around the page and its staying on the amounts and changing that.
+
+**Home-screen icon on the iPad,** so it opens like an app.-  - how do i do this?
+
+- **Address that doesn't change:** use the laptop's name (e.g. `http://LIZ-LAPTOP:8000`) or fix its address in the router, so the iPad bookmark keeps working.
+- how does this work - enact it and explain how this works and where i direct the ipad. add details in the settings part to explain how to access the site on teh ipad
+
+- **Daily backups copied automatically to OneDrive,** so data survives if the laptop dies. The app already supports this; it just needs a backup folder outside the laptop and a daily schedule.
+- -- have a backup folder location option in teh settings menu. once thats filled out, start doing it per day.
+
+- **Stop the laptop sleeping** while the app is running, otherwise the iPad loses it mid-class.
+
+
+
+1.  * **Fix:** give each material a type (material, lesson fee, or pass-through order at an amount you type in). Reports would then show lesson income separately, and those items wouldn't be margin-flagged.
+
+2. **Only 11 of 97 materials are ticked as Silver.**
+
+* Oval, D and square wire, the tubes, the "one day rate" silver, the jump rings sold by weight and deleted materials #59/#60 aren't ticked.
+* So "Silver only" and the daily silver costing miss most silver sales.
+* **Fix:** tick by category on the Materials page, then you check the list.
+
+* **The thin-margin box is cluttered.** 30 materials have 0% markup (cubic zirconia stones, lessons, pass-through orders). Fix 1 plus an "intentionally no markup" option would leave only the real warnings.
+* **Duplicate names in class mode.** There are three Kates and eight other pairs, and class mode shows first names only. Showing a surname initial would help, as would a "merge students" tool.
+* **No student has an email address (0 of 73),** so "email balances" can't be used yet. Importing an attendee export from Wix (your to-do) would fill emails in, and a CSV upload needs no Wix login set up.
+**No class has start or end dates,** so every class counts as current and the archive button never finds anyone. A quick "set term dates" step for several classes at once would fix that.

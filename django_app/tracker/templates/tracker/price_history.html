@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Materials</p>
+    <h1>Price history{% if material %}: {{ material.name }}{% endif %}</h1>
+    <p class="lede">Old prices are kept whenever a supplier price is applied or a material is edited.</p>
+  </div>
+  <div class="btn-row">
+    {% if material %}<a role="button" class="ghost" href="{% url 'tracker:price_history' %}">All materials</a>
+    <a role="button" class="ghost" href="{% url 'tracker:material_edit' material.pk %}">Edit {{ material.name }}</a>{% endif %}
+    <a role="button" class="ghost" href="{% url 'tracker:material_list' %}">Back to materials</a>
+  </div>
+</div>
+
+<section class="panel">
+  <header><h3>Material price changes</h3><span class="badge">{{ changes|length }}</span></header>
+  <figure>
+  <table>
+    <thead><tr><th>Date</th>{% if not material %}<th>Material</th>{% endif %}<th class="num">Was</th><th class="num">Now</th><th class="num">Change</th><th>How</th></tr></thead>
+    <tbody>
+    {% for c in changes %}
+      <tr>
+        <td class="nowrap">{{ c.changed_at|date:"j M Y" }}</td>
+        {% if not material %}<td><a href="?material={{ c.material_id }}">{{ c.material }}</a></td>{% endif %}
+        <td class="num">{{ c.old_price|gbp }}{% if c.old_weight %}<span class="sub-text">{{ c.old_weight|floatformat:"-4" }}g</span>{% endif %}</td>
+        <td class="num"><strong>{{ c.new_price|gbp }}</strong>{% if c.new_weight %}<span class="sub-text">{{ c.new_weight|floatformat:"-4" }}g</span>{% endif %}</td>
+        <td class="num">{% with p=c.percent_change %}{% if p > 0 %}<span class="owes">+{{ p|floatformat:1 }}%</span>{% elif p < 0 %}<span class="credit">{{ p|floatformat:1 }}%</span>{% else %}–{% endif %}{% endwith %}</td>
+        <td><span class="badge">{% if c.source == "manual" %}Edited{% else %}Supplier{% endif %}</span></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">No price changes recorded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </figure>
+</section>
+
+{% if not material %}
+<section class="panel" id="silver">
+  <header><h3>Silver price</h3><span class="sub-text">Cooksongold sterling silver, inc VAT · checked once a day when the dashboard is opened</span></header>
+  <div class="body">
+    <p class="sub-text">Silver sales are costed at the price on the day of the sale. For sales from before the app started checking, add the price from an invoice or Cooksongold's site.</p>
+    <form method="post" action="{% url 'tracker:silver_add' %}" class="silver-add">
+      {% csrf_token %}
+      <label>{{ silver_form.day.label }} {{ silver_form.day }}</label>
+      <label>{{ silver_form.price_per_kg.label }} {{ silver_form.price_per_kg }}</label>
+      <button type="submit" class="small">Add past silver price</button>
+    </form>
+  </div>
+  <figure>
+  <table>
+    <thead><tr><th>Date</th><th class="num">Per kg</th><th class="num">Per gram</th><th class="num">Change</th><th>How</th><th></th></tr></thead>
+    <tbody>
+    {% for s in silver %}
+      <tr>
+        <td class="nowrap">{{ s.fetched_at|date:"j M Y" }}</td>
+        <td class="num">{{ s.price_per_kg|gbp }}</td>
+        <td class="num"><strong>{{ s.price_per_gram|gbp }}</strong></td>
+        <td class="num">{% with p=s.change %}{% if p > 0 %}<span class="owes">+{{ p|floatformat:1 }}%</span>{% elif p < 0 %}<span class="credit">{{ p|floatformat:1 }}%</span>{% else %}–{% endif %}{% endwith %}</td>
+        <td><span class="badge">{% if s.source == "manual" %}Added by hand{% else %}Cooksongold{% endif %}</span></td>
+        <td class="actions"><form method="post" action="{% url 'tracker:silver_delete' s.pk %}" class="inline">{% csrf_token %}<button class="small danger-ghost" aria-label="Delete silver price from {{ s.fetched_at|date:'j M Y' }}">Delete</button></form></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">No silver prices recorded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </figure>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="crumb" href="{% url 'tracker:student_list' %}">← Students</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">History kept</p>
+    <h1>Archived students</h1>
+    <p class="lede">To bring someone back for a new term, add them to a class from the Classes tab, or restore them here.</p>
+  </div>
+</div>
+<section class="panel">
+  <div class="body">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search archived students" autocomplete="off"
+           hx-get="{% url 'tracker:archived_students' %}" hx-trigger="input changed delay:250ms, search" hx-target="#archived-rows">
+  </div>
+  <figure>
+  <table>
+    <thead><tr><th>Student</th><th>Last class</th><th>Archived</th><th class="num">Balance</th><th></th></tr></thead>
+    <tbody id="archived-rows">{% include "tracker/partials/archived_rows.html" %}</tbody>
+  </table>
+  </figure>
+</section>
+{% endblock %}

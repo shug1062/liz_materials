@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb" href="{% url 'tracker:class_list' %}">← Classes</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow"><span class="badge status-{{ studio_class.status }}">{{ studio_class.status|capfirst }}</span>
+      {% if studio_class.start_date or studio_class.end_date %}&nbsp;{{ studio_class.start_date|date:"j M Y"|default:"…" }} – {{ studio_class.end_date|date:"j M Y"|default:"ongoing" }}{% endif %}</p>
+    <h1>{{ studio_class.name }}</h1>
+    {% if studio_class.notes %}<p class="lede">{{ studio_class.notes }}</p>{% endif %}
+  </div>
+  <div class="btn-row">
+    <a role="button" class="ghost" href="{% url 'tracker:class_edit' studio_class.pk %}">Edit class</a>
+    <a role="button" href="{% url 'tracker:class_mode' %}?class_name={{ studio_class.name|urlencode }}">Class mode</a>
+  </div>
+</div>
+
+<div class="report-grid">
+  <section class="panel">
+    <header><h3>Students ({{ students|length }})</h3><a href="{% url 'tracker:student_add' %}?class_name={{ studio_class.name|urlencode }}">+ New student</a></header>
+    <figure>
+    <table>
+      <tbody>
+      {% for s in students %}
+        <tr>
+          <td><a href="{{ s.get_absolute_url }}"><strong>{{ s.name }}</strong></a>{% if s.email %}<span class="sub-text">{{ s.email }}</span>{% endif %}</td>
+          <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}</td>
+        </tr>
+      {% empty %}
+        <tr><td class="empty">Nobody yet – add students from the list.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </figure>
+  </section>
+
+  <section class="panel">
+    <header><h3>Add students</h3></header>
+    <div class="body">
+      <input type="search" name="q" placeholder="Search by name, email or class" autocomplete="off"
+             hx-get="{% url 'tracker:class_add_search' studio_class.pk %}" hx-trigger="input changed delay:250ms, search" hx-target="#candidates">
+      <p class="helptext">Current students first, archived students at the bottom. Adding an archived student restores them.</p>
+    </div>
+    <div id="candidates">{% include "tracker/partials/class_candidates.html" %}</div>
+  </section>
+</div>
+{% endblock %}

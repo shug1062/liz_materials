@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb" href="{% url 'tracker:class_list' %}">← Classes</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">End of term</p>
+    <h1>Archive students</h1>
+    <p class="lede">These students aren't in a current or upcoming class. Archiving hides them from everyday lists – their history is kept and you can restore them any time. Untick anyone you want to keep.</p>
+  </div>
+</div>
+<form method="post">
+  {% csrf_token %}
+  <section class="panel">
+    <figure>
+    <table>
+      <thead><tr><th></th><th>Student</th><th>Class</th><th class="num">Balance</th></tr></thead>
+      <tbody>
+      {% for s in candidates %}
+        <tr>
+          <td><input type="checkbox" name="student" value="{{ s.pk }}" checked aria-label="Archive {{ s.name }}"></td>
+          <td><a href="{{ s.get_absolute_url }}"><strong>{{ s.name }}</strong></a></td>
+          <td>{{ s.class_name|default:"No class" }}</td>
+          <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="empty">Everyone is in a current or upcoming class.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </figure>
+    {% if candidates %}
+    <div class="form-actions">
+      <span class="lede">Students who still owe money stay on “Balances to chase”.</span>
+      <a role="button" class="ghost" href="{% url 'tracker:class_list' %}">Cancel</a>
+      <button type="submit">Archive ticked students</button>
+    </div>
+    {% endif %}
+  </section>
+</form>
+{% endblock %}

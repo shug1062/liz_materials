@@ -1,18 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel form-card wide">
-  <header><h3>{% if material %}Edit {{ material.name }}{% else %}Add material{% endif %}</h3></header>
+  <header><h3>{% if material %}Edit {{ material.name }}{% elif source %}Copy of {{ source.name }}{% else %}Add material{% endif %}</h3>
+    {% if material %}<a role="button" class="small ghost" href="{% url 'tracker:material_add' %}?copy={{ material.pk }}">Duplicate</a>{% endif %}
+  </header>
   <form method="post" id="material-form">
     <div class="body">
       {% csrf_token %}
+      {% if source %}<p class="note">Everything is copied from {{ source.name }}. Change what’s different, then save – the original isn’t touched.</p>{% endif %}
       {{ form.non_field_errors }}
       {{ form.name.errors }}<label>Name {{ form.name }}</label>
+      {{ form.kind.errors }}<label>Type {{ form.kind }}</label>
+      <p class="helptext">Lesson fees and orders at cost are shown separately in Reports and left out of materials profit. For an order at cost, you type the £ amount each time instead of a quantity.</p>
       <div class="grid">
         <div>{{ form.category_name.errors }}<label>Category {{ form.category_name }}</label></div>
         <div>{{ form.unit_type.errors }}<label>Sold per {{ form.unit_type }}</label></div>
       </div>
       <datalist id="category-names">{% for c in category_names %}<option value="{{ c }}">{% endfor %}</datalist>
 
+      <div data-hide-for-kind="order">
       {{ form.pricing_type.errors }}<label>Pricing {{ form.pricing_type }}</label>
       <p class="helptext">Fixed: pack or item price. Per gram: sheet, wire, tube sold by weight. Per gram × item weight: jump rings and other items sold by weight but used one at a time.</p>
 
@@ -31,16 +37,24 @@
         <div>{{ form.base_price.errors }}<label>Supplier price (£) <span id="base-price-field" class="field-slot">{{ form.base_price }}</span></label></div>
         <div data-for-pricing="fixed per_gram">{{ form.pack_quantity.errors }}<label>Items in pack {{ form.pack_quantity }}</label></div>
         <div data-for-pricing="per_gram_item">{{ form.weight_per_unit.errors }}<label>Weight per item (g) <span id="weight-field" class="field-slot">{{ form.weight_per_unit }}</span></label></div>
-        <div>{{ form.markup_percentage.errors }}<label>Markup % {{ form.markup_percentage }}</label></div>
+        <div>{{ form.markup_percentage.errors }}<label>Markup % {{ form.markup_percentage }}</label>
+             <label class="checkbox-row tight">{{ form.markup_ok }} Low markup is deliberate – don’t flag it</label></div>
       </div>
 
       <div id="price-calc" hx-get="{% url 'tracker:material_price_calc' %}" hx-include="#material-form"
            hx-trigger="load, input changed delay:300ms from:#material-form, change from:#material-form, fetched from:body"></div>
+      </div>
 
       <div class="grid">
         <div>{{ form.supplier.errors }}<label>Supplier name {{ form.supplier }}</label></div>
         <div><label class="checkbox-row">{{ form.is_active }} Show in purchase list</label>
-             <label class="checkbox-row tight">{{ form.is_favourite }} Quick button in class mode</label></div>
+             <label class="checkbox-row tight">{{ form.is_favourite }} Quick button in class mode</label>
+             <label class="checkbox-row tight" data-hide-for-kind="order lesson">{{ form.is_silver }} Silver – cost follows the daily silver price</label>
+             <label class="checkbox-row tight" data-hide-for-kind="order lesson">{{ form.in_silver_report }} Count in “Silver used by class” report</label></div>
+      </div>
+      <div data-hide-for-kind="order">
+      {{ form.price_date.errors }}<label>Price checked on {{ form.price_date }}</label>
+      <p class="helptext">Set automatically when the supplier price changes. For silver, the cost of each sale is this price scaled by how much silver has moved since this date.</p>
       </div>
       {{ form.notes.errors }}<label>Notes {{ form.notes }}</label>
     </div>

@@ -1,0 +1,1 @@
+{% load money %}<div class="detail">{% for label, amount in totals.methods %}{{ label }} <strong>{{ amount|gbp }}</strong>{% if not forloop.last %} · {% endif %}{% endfor %}</div>

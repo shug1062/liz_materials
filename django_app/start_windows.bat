@@ -1,15 +1,20 @@
 @echo off
 rem Starts the studio tracker on this laptop so the iPad can use it on the same Wi-Fi.
 cd /d "%~dp0"
+set "STUDIO_HOSTNAME=%COMPUTERNAME%"
 
 if not exist ".venv\Scripts\python.exe" (
     py -3 -m venv .venv || goto :error
     .venv\Scripts\python -m pip install -r requirements.txt || goto :error
 )
 
+rem The live database lives in %LOCALAPPDATA%\SilverBirdStudio, outside OneDrive; this moves it there once.
+.venv\Scripts\python manage.py relocate_data || goto :error
 .venv\Scripts\python manage.py migrate --noinput || goto :error
-rem First run: bring across data from the old app if its database file is here.
-if exist "jewelry_business.db" (
+rem First run: bring across data from the old app (put jewelry_business.db in the data folder).
+if exist "data\jewelry_business.db" (
+    .venv\Scripts\python manage.py import_legacy --if-empty "data\jewelry_business.db" || goto :error
+) else if exist "jewelry_business.db" (
     .venv\Scripts\python manage.py import_legacy --if-empty "jewelry_business.db" || goto :error
 ) else if exist "..\nicegui_app\jewelry_business.db" (
     .venv\Scripts\python manage.py import_legacy --if-empty "..\nicegui_app\jewelry_business.db" || goto :error
@@ -18,9 +23,11 @@ if exist "jewelry_business.db" (
 .venv\Scripts\python manage.py backup_db
 
 echo.
-echo Open http://localhost:8000 here, or http://THIS-LAPTOP-IP:8000 on the iPad.
+echo Open http://localhost:8000 here, or try http://%COMPUTERNAME%:8000 on the iPad.
+echo If the laptop name does not work on the iPad, use its Wi-Fi IP address or reserve that address in the router.
 echo Close this window to stop the app.
-.venv\Scripts\python -m waitress --listen=0.0.0.0:8000 --threads=8 studio.wsgi:application
+.venv\Scripts\python keep_awake_windows.py
+if errorlevel 1 goto :error
 goto :eof
 
 :error

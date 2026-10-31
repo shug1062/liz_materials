@@ -3,7 +3,13 @@ import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.environ.get("STUDIO_DATA_DIR", BASE_DIR / "data"))
+# OneDrive syncing can corrupt a live SQLite file, so on Windows keep it in local app data, not the app folder.
+LEGACY_DATA_DIR = BASE_DIR / "data"
+_default_data_dir = (
+    Path(os.environ["LOCALAPPDATA"]) / "SilverBirdStudio"
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA") else LEGACY_DATA_DIR
+)
+DATA_DIR = Path(os.environ.get("STUDIO_DATA_DIR", _default_data_dir))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -20,6 +26,8 @@ SECRET_KEY = _load_secret_key()
 DEBUG = os.environ.get("DJANGO_DEBUG") == "1"
 # Home-network app reached by whatever IP the laptop gets; set a comma-separated list to restrict.
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+STUDIO_LAN_IP = os.environ.get("STUDIO_LAN_IP", "")
+STUDIO_HOSTNAME = os.environ.get("STUDIO_HOSTNAME", "")
 # Off by default: anyone on the home Wi-Fi gets straight in. Set STUDIO_REQUIRE_LOGIN=1 to require a password.
 REQUIRE_LOGIN = os.environ.get("STUDIO_REQUIRE_LOGIN") == "1"
 
@@ -44,6 +52,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.auth.middleware.LoginRequiredMiddleware" if REQUIRE_LOGIN else "tracker.middleware.AutoLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "tracker.middleware.DailyBackupMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
 ]
@@ -76,6 +85,8 @@ DATABASES = {
         "OPTIONS": {
             "transaction_mode": "IMMEDIATE",
             "timeout": 20,
+            # WAL lets pages keep reading while a purchase is being saved.
+            "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
         },
     }
 }
@@ -111,6 +122,8 @@ BACKUP_DIR = DATA_DIR / "backups"
 # Point this at a OneDrive/Google Drive/USB folder so backups survive losing the laptop.
 BACKUP_COPY_DIR = os.environ.get("STUDIO_BACKUP_COPY_DIR") or None
 BACKUP_KEEP = 60
+# The Wix import preview posts two fields per person.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 12_000
 
 # Supplier prices are stored including VAT unless STUDIO_PRICES_EX_VAT=1 (e.g. if VAT-registered).
 SUPPLIER_PRICES_INCLUDE_VAT = os.environ.get("STUDIO_PRICES_EX_VAT") != "1"
@@ -118,3 +131,6 @@ SUPPLIER_PRICES_INCLUDE_VAT = os.environ.get("STUDIO_PRICES_EX_VAT") != "1"
 # Used in balance emails and printed statements.
 STUDIO_NAME = "The Silver Bird"
 STUDIO_SIGNOFF = os.environ.get("STUDIO_SIGNOFF", "Liz")
+
+# Materials making less than this share of their student price as profit are flagged.
+THIN_MARGIN_PERCENT = 15

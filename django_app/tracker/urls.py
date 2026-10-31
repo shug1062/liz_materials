@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import views
 
@@ -6,6 +7,8 @@ app_name = "tracker"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("settings/", views.settings_page, name="settings"),
+    path("profit/", RedirectView.as_view(pattern_name="tracker:reports", query_string=True)),
     path("students/", views.student_list, name="student_list"),
     path("students/add/", views.student_form, name="student_add"),
     path("students/<int:pk>/", views.student_detail, name="student_detail"),
@@ -17,7 +20,11 @@ urlpatterns = [
     path("purchases/<int:pk>/delete/", views.purchase_delete, name="purchase_delete"),
     path("purchases/price-preview/", views.price_preview, name="price_preview"),
     path("payments/", views.payments_report, name="payments_report"),
-    path("profit/", views.profit_report, name="profit_report"),
+    path("reports/", views.reports, name="reports"),
+    path("reports/<str:kind>.csv", views.reports_csv, name="reports_csv"),
+    path("materials/history/", views.price_history, name="price_history"),
+    path("materials/silver/", views.material_silver, name="material_silver"),
+    path("materials/markup-ok/", views.material_markup_ok, name="material_markup_ok"),
     path("payments/new/", views.payment_form, name="payment_new"),
     path("payments/<int:pk>/edit/", views.payment_form, name="payment_edit"),
     path("payments/<int:pk>/delete/", views.payment_delete, name="payment_delete"),
@@ -34,7 +41,19 @@ urlpatterns = [
     path("materials/arrange/categories/", views.category_order, name="category_order"),
     path("materials/arrange/materials/", views.material_order, name="material_order"),
     path("classes/reorder/", views.class_reorder, name="class_reorder"),
+    path("classes/", views.class_list, name="class_list"),
+    path("classes/add/", views.class_form, name="class_add"),
+    path("classes/archive/", views.archive_students, name="archive_students"),
+    path("classes/dates/", views.class_dates, name="class_dates"),
+    path("classes/<int:pk>/", views.class_detail, name="class_detail"),
+    path("classes/<int:pk>/edit/", views.class_form, name="class_edit"),
+    path("classes/<int:pk>/candidates/", views.class_add_search, name="class_add_search"),
+    path("classes/<int:pk>/add/<int:student_pk>/", views.class_add_student, name="class_add_student"),
+    path("students/archived/", views.archived_students, name="archived_students"),
+    path("students/<int:pk>/archive/", views.student_archive, name="student_archive"),
     path("silver-price/", views.silver_price, name="silver_price"),
+    path("silver-price/add/", views.silver_add, name="silver_add"),
+    path("silver-price/<int:pk>/delete/", views.silver_delete, name="silver_delete"),
     path("projects/", views.project_list, name="project_list"),
     path("projects/add/", views.project_form, name="project_add"),
     path("projects/<int:pk>/edit/", views.project_form, name="project_edit"),
@@ -44,6 +63,9 @@ urlpatterns = [
     path("class/student/<int:pk>/", views.class_basket, name="class_basket"),
     path("class/search/", views.class_search, name="class_search"),
     path("students/<int:pk>/settle/", views.settle_up, name="settle_up"),
+    path("students/<int:pk>/class-payment/", views.class_payment, name="class_payment"),
     path("students/<int:pk>/statement/", views.student_statement, name="student_statement"),
+    path("students/import/", views.student_import, name="student_import"),
+    path("students/<int:pk>/merge/", views.student_merge, name="student_merge"),
     path("balances/", views.balances_to_chase, name="balances"),
 ]
