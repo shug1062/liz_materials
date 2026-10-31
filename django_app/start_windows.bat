@@ -2,10 +2,19 @@
 rem Starts the studio tracker on this laptop so the iPad can use it on the same Wi-Fi.
 cd /d "%~dp0"
 set "STUDIO_HOSTNAME=%COMPUTERNAME%"
+set "LOCK_DIR=%LOCALAPPDATA%\SilverBirdStudio"
+if not exist "%LOCK_DIR%" mkdir "%LOCK_DIR%"
 
-rem Already running (e.g. the taskbar button clicked twice): just open the page.
-curl -s -o nul --max-time 2 http://localhost:8000/ 2>nul && (start "" http://localhost:8000/ & goto :eof)
+rem Windows lets a second server share port 8000, so hold this file open for as long as the window runs.
+call :run 9>"%LOCK_DIR%\launcher.lock" || goto :already_started
+goto :eof
 
+:already_started
+rem If the other window is still starting up, it opens the page itself.
+curl -s -o nul --max-time 2 http://localhost:8000/ 2>nul && start "" http://localhost:8000/
+goto :eof
+
+:run
 if not exist ".venv\Scripts\python.exe" (
     py -3 -m venv .venv || goto :error
     .venv\Scripts\python -m pip install -r requirements.txt || goto :error
@@ -31,8 +40,9 @@ echo If the laptop name does not work on the iPad, use its Wi-Fi IP address or r
 echo Close this window to stop the app.
 .venv\Scripts\python keep_awake_windows.py
 if errorlevel 1 goto :error
-goto :eof
+exit /b 0
 
 :error
 echo Something went wrong - see the messages above.
 pause
+exit /b 0
