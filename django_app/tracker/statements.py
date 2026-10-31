@@ -87,10 +87,13 @@ def statement_for(student) -> Statement:
             remaining -= purchase.total_cost
             continue
         remaining = ZERO
-        key = purchase.material_id
+        material = purchase.material
+        # Each course fee is its own line ("Course fee – Autumn term"), not lumped together.
+        detail = purchase.notes.strip() if material.kind == "lesson" else ""
+        key = (purchase.material_id, detail)
         if key not in grouped:
-            grouped[key] = {"name": purchase.material.name, "quantity": ZERO, "unit": purchase.material.unit_type,
-                            "kind": purchase.material.kind}
+            grouped[key] = {"name": f"{material.name} – {detail}" if detail else material.name, "quantity": ZERO,
+                            "unit": material.unit_type, "kind": material.kind}
         grouped[key]["quantity"] += purchase.quantity
     statement.items = [dict(item, label=describe(item)) for item in grouped.values()]
     return statement

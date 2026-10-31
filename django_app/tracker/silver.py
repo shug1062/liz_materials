@@ -41,6 +41,16 @@ class RateLookup:
                 .values_list("price_per_kg", flat=True).first())
 
 
+def fetch_today():
+    """Record today's silver price from Cooksongold unless today already has a reading."""
+    from . import suppliers
+
+    latest = SilverPrice.objects.first()
+    if latest and timezone.localtime(latest.fetched_at).date() == timezone.localdate():
+        return latest
+    return SilverPrice.objects.create(price_per_kg=suppliers.fetch_silver_price_per_kg())
+
+
 def looks_like_silver(material) -> bool:
     """A guess for the Choose silver page: named silver, or sold by weight at a silver-like price per gram."""
     name = f"{material.name} {material.category.name if material.category else ''}".lower()

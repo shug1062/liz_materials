@@ -127,6 +127,8 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 12_000
 
 # Supplier prices are stored including VAT unless STUDIO_PRICES_EX_VAT=1 (e.g. if VAT-registered).
 SUPPLIER_PRICES_INCLUDE_VAT = os.environ.get("STUDIO_PRICES_EX_VAT") != "1"
+# While the app runs, record today's silver price each day (set STUDIO_SILVER_AUTO_FETCH=0 to stop).
+SILVER_AUTO_FETCH = os.environ.get("STUDIO_SILVER_AUTO_FETCH", "1") == "1"
 
 # Used in balance emails and printed statements.
 STUDIO_NAME = "The Silver Bird"

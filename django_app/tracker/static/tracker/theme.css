@@ -178,6 +178,7 @@ tr.inactive td.name { text-decoration: line-through; }
 .silver-add label { flex: 1 1 11rem; }
 .silver-add button { margin-bottom: var(--pico-spacing); }
 .class-payment { margin-top: 1.5rem; }
+.day-picker input { margin: 0; width: auto; }
 .class-payment .body { padding: 1.5rem 1.5rem .5rem; }
 .panel.attention { border-color: #ecd9c4; }
 .attention-summary { display: flex; align-items: center; gap: .8rem; padding: 1rem 1.35rem; margin-bottom: 0 !important; }

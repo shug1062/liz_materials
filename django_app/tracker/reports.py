@@ -1,12 +1,13 @@
 """Private money reports: monthly income by payment method, materials profit, and CSV exports for tax records."""
 import csv
 from datetime import date
+from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import HttpResponse
 
-from .models import ZERO, Material, Payment, Purchase, money
+from .models import ZERO, Material, Payment, Purchase, Student, StudioClass, money
 
 
 def tax_year(day: date) -> tuple[date, date]:
@@ -63,6 +64,90 @@ def monthly(payments, purchases) -> list[dict]:
             m[key] = money(m[key])
         m["profit"] = m["sales"] - m["cost"]
     return rows
+
+
+def silver_grams(material, quantity):
+    """Grams of silver in a sale, or None when the material has no weight to go on (e.g. packs of jump rings)."""
+    if material.pricing_type == Material.PricingType.PER_GRAM:
+        return quantity
+    if material.weight_per_unit:
+        # Per gram × item weight is always sold by the item, whatever its unit label says.
+        return quantity * material.weight_per_unit
+    if material.pricing_type == Material.PricingType.FIXED and material.unit_type == "gram":
+        return quantity
+    return None
+
+
+def silver_by_class(purchases, no_class_label) -> list[dict]:
+    """Silver used by each class over its whole life (or the part of it inside the chosen period)."""
+    classes = {c.name: c for c in StudioClass.objects.all()}
+    rows = {}
+    for p in purchases.filter(material__in_silver_report=True).select_related("student", "material"):
+        label = "Sales channels" if p.student.is_sales_channel else (p.class_name or no_class_label)
+        row = rows.setdefault(label, {"label": label, "grams": ZERO, "sold": ZERO, "days": set(), "pieces": {}})
+        grams = silver_grams(p.material, p.quantity)
+        if grams is None:
+            row["pieces"][p.material.name] = row["pieces"].get(p.material.name, ZERO) + p.quantity
+        else:
+            row["grams"] += grams
+        row["sold"] += p.total_cost
+        row["days"].add(p.purchase_date)
+    order = {name: i for i, name in enumerate(StudioClass.ordered_class_names())}
+    result = []
+    for row in sorted(rows.values(), key=lambda r: (order.get(r["label"], len(order)), r["label"].lower())):
+        studio_class = classes.get(row["label"])
+        days = row.pop("days")
+        row.update(
+            start=studio_class.start_date if studio_class and studio_class.start_date else min(days),
+            end=studio_class.end_date if studio_class and studio_class.end_date else max(days),
+            dates_set=bool(studio_class and (studio_class.start_date or studio_class.end_date)),
+            n_days=len(days),
+            grams=row["grams"].quantize(Decimal("0.01")),
+            pieces=sorted(row["pieces"].items()),
+            n_pieces=sum(row["pieces"].values(), ZERO),
+        )
+        result.append(row)
+    return result
+
+
+def class_day(class_name: str, day: date) -> dict:
+    """Everything that happened in one class session: who bought what, silver used, money taken, what's owed."""
+    purchases = list(Purchase.objects.filter(class_name=class_name, purchase_date=day)
+                     .select_related("student", "material").order_by("student__name", "id"))
+    buyer_ids = {p.student_id for p in purchases}
+    payments = list(Payment.objects.filter(payment_date=day)
+                    .filter(Q(student_id__in=buyer_ids) | Q(student__class_name=class_name))
+                    .select_related("student"))
+    student_ids = buyer_ids | {p.student_id for p in payments}
+    students = {s.pk: s for s in Student.objects.with_balances().filter(pk__in=student_ids)}
+
+    rows = {pk: {"student": s, "items": [], "charged": ZERO, "paid": ZERO} for pk, s in students.items()}
+    silver, pieces = {}, {}
+    for p in purchases:
+        rows[p.student_id]["items"].append(p)
+        rows[p.student_id]["charged"] += p.total_cost
+        if p.material.in_silver_report:
+            grams = silver_grams(p.material, p.quantity)
+            if grams is None:
+                pieces[p.material.name] = pieces.get(p.material.name, ZERO) + p.quantity
+            else:
+                silver[p.material.name] = silver.get(p.material.name, ZERO) + grams
+    taken = {"cash": ZERO, "card": ZERO, "other": ZERO, "total": ZERO}
+    for p in payments:
+        rows[p.student_id]["paid"] += p.amount
+        taken[{Payment.Method.CASH: "cash", Payment.Method.CARD: "card"}.get(p.payment_method, "other")] += p.amount
+        taken["total"] += p.amount
+    rows = sorted(rows.values(), key=lambda r: r["student"].name.lower())
+    return {
+        "rows": rows,
+        "charged": sum((r["charged"] for r in rows), ZERO),
+        "taken": taken,
+        "owed": sum((-r["student"].balance for r in rows if r["student"].balance < 0), ZERO),
+        "silver": sorted((name, grams.quantize(Decimal("0.01"))) for name, grams in silver.items()),
+        "silver_grams": sum(silver.values(), ZERO).quantize(Decimal("0.01")),
+        "pieces": sorted(pieces.items()),
+        "n_items": len(purchases),
+    }
 
 
 # ---------- CSV ----------

@@ -61,6 +61,10 @@ class Student(models.Model):
         return self.name
 
     def save(self, *args, **kwargs):
+        if self.class_name:
+            # Reuse an existing class's spelling so "previous student" doesn't become a second class.
+            existing = StudioClass.objects.filter(name__iexact=self.class_name.strip()).values_list("name", flat=True).first()
+            self.class_name = existing or self.class_name.strip()
         super().save(*args, **kwargs)
         if self.class_name and not self.is_sales_channel and not StudioClass.objects.filter(name=self.class_name).exists():
             StudioClass.objects.create(name=self.class_name, sort_order=StudioClass.objects.count())
@@ -198,6 +202,15 @@ class Material(models.Model):
         """Price per unit charged to students, kept to 4dp for per-gram items."""
         price = self.cost_per_item * (1 + self.markup_percentage / 100)
         return price.quantize(UNIT_PRICE_PLACES, rounding=ROUND_HALF_UP)
+
+    @classmethod
+    def course_fee(cls) -> "Material":
+        """Hidden lesson item that term and course fees are charged against (the amount is set per charge)."""
+        fee, _ = cls.objects.get_or_create(
+            name="Course fee", kind=cls.Kind.LESSON,
+            defaults={"base_price": ZERO, "unit_type": "item", "supplier": "", "is_active": False},
+        )
+        return fee
 
 
 class Project(models.Model):

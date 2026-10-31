@@ -12,7 +12,7 @@
     <tr>
       <td class="nowrap">{{ p.purchase_date|date:"j M Y" }}</td>
       {% if show_student %}<td><a href="{{ p.student.get_absolute_url }}">{{ p.student }}</a></td>{% endif %}
-      <td>{{ p.material }}</td>
+      <td>{{ p.material }}{% if p.notes %}<span class="sub-text">{{ p.notes }}</span>{% endif %}</td>
       <td class="num">{{ p.quantity|floatformat:"-2" }} <span class="unit">{{ p.material.unit_type }}</span></td>
       <td class="num">{{ p.unit_price|gbp }}</td>
       <td class="num"><strong>{{ p.total_cost|gbp }}</strong></td>

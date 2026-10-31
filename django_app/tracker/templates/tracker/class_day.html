@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb no-print" href="{{ studio_class.get_absolute_url }}">← {{ studio_class.name }}</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Class summary</p>
+    <h1>{{ studio_class.name }} · {{ day|date:"l j F Y" }}</h1>
+  </div>
+  <div class="btn-row no-print">
+    <form method="get" class="inline day-picker">
+      <input type="date" name="date" value="{{ day|date:'Y-m-d' }}" aria-label="Class date" onchange="this.form.submit()">
+    </form>
+    <button type="button" class="ghost" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+{% if days %}
+<div class="chips presets no-print">
+  {% for d in days %}<a class="chip{% if d == day %} selected{% endif %}" href="?date={{ d|date:'Y-m-d' }}">{{ d|date:"D j M" }}</a>{% endfor %}
+</div>
+{% endif %}
+
+<section class="stats">
+  <div class="stat sapphire"><div class="label"><span class="gem"></span>Charged today</div><div class="value">{{ charged|gbp }}</div>
+    <div class="detail">{{ n_items }} item{{ n_items|pluralize }} · {{ rows|length }} student{{ rows|length|pluralize }}</div></div>
+  <div class="stat emerald"><div class="label"><span class="gem"></span>Taken today</div><div class="value">{{ taken.total|gbp }}</div>
+    <div class="detail">Cash {{ taken.cash|gbp }} · Card {{ taken.card|gbp }}{% if taken.other %} · Other {{ taken.other|gbp }}{% endif %}</div></div>
+  <div class="stat ruby"><div class="label"><span class="gem"></span>Still owed</div><div class="value">{{ owed|gbp }}</div>
+    <div class="detail">by these students, all time</div></div>
+  <div class="stat steel"><div class="label"><span class="gem"></span>Silver used</div><div class="value">{{ silver_grams|floatformat:"-2g" }} g</div>
+    <div class="detail">{% if pieces %}plus pieces with no weight{% else %}materials counted in the silver report{% endif %}</div></div>
+</section>
+
+<section class="panel">
+  <header><h3>Who bought what</h3></header>
+  <figure>
+  <table class="class-day-table">
+    <thead><tr><th>Student</th><th>Bought</th><th class="num">Charged</th><th class="num">Paid today</th><th class="num">Balance now</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><a href="{{ r.student.get_absolute_url }}"><strong>{{ r.student.name }}</strong></a></td>
+        <td>{% for p in r.items %}{{ p.material.name }}{% if p.notes %} ({{ p.notes }}){% endif %} – {{ p.quantity|floatformat:"-2" }} <span class="unit">{{ p.material.unit_type }}</span> · {{ p.total_cost|gbp }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="unit">Paid only</span>{% endfor %}</td>
+        <td class="num">{{ r.charged|gbp }}</td>
+        <td class="num">{% if r.paid %}{{ r.paid|gbp }}{% else %}–{% endif %}</td>
+        <td class="num">{% include "tracker/partials/balance_text.html" with b=r.student.balance %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="empty">Nothing recorded for this class on this day.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </figure>
+</section>
+
+<section class="panel">
+  <header><h3>Silver used</h3><span class="sub-text">For reordering – materials ticked “Count in silver report”</span></header>
+  <figure>
+  <table>
+    <thead><tr><th>Material</th><th class="num">Used</th></tr></thead>
+    <tbody>
+    {% for name, grams in silver %}<tr><td>{{ name }}</td><td class="num">{{ grams|floatformat:"-2g" }} <span class="unit">g</span></td></tr>{% endfor %}
+    {% for name, qty in pieces %}<tr><td>{{ name }}</td><td class="num">{{ qty|floatformat:"-2" }} <span class="unit">pieces</span></td></tr>{% endfor %}
+    {% if not silver and not pieces %}<tr><td colspan="2" class="empty">No silver sold in this session.</td></tr>{% endif %}
+    </tbody>
+    {% if silver|length > 1 %}<tfoot><tr><th>Total</th><th class="num">{{ silver_grams|floatformat:"-2g" }} <span class="unit">g</span></th></tr></tfoot>{% endif %}
+  </table>
+  </figure>
+</section>
+{% endblock %}

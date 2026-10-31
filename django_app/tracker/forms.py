@@ -116,6 +116,14 @@ class DateRangeForm(forms.Form):
     end = forms.DateField(required=False, widget=DateInput(), label="To")
 
 
+class CourseFeeForm(forms.Form):
+    description = forms.CharField(label="What it's for", max_length=200,
+                                  widget=forms.TextInput(attrs={"placeholder": "e.g. Autumn term – 10 weeks"}))
+    amount = forms.DecimalField(label="Fee per student (£)", max_digits=10, decimal_places=2,
+                                min_value=Decimal("0.01"), widget=DecimalInput())
+    charge_date = forms.DateField(label="Date", widget=DateInput(), initial=timezone.localdate)
+
+
 class TermDatesForm(forms.Form):
     start = forms.DateField(required=False, widget=DateInput(), label="Start date")
     end = forms.DateField(required=False, widget=DateInput(), label="End date")
@@ -245,6 +253,13 @@ class StudioClassForm(forms.ModelForm):
         fields = ["name", "start_date", "end_date", "notes"]
         widgets = {"start_date": DateInput(), "end_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 2})}
         help_texts = {"end_date": "Leave blank for an ongoing class. Students in finished classes can be archived."}
+
+    def clean_name(self):
+        name = " ".join(self.cleaned_data["name"].split())
+        clash = StudioClass.objects.filter(name__iexact=name).exclude(pk=self.instance.pk).first()
+        if clash:
+            raise forms.ValidationError(f"There's already a class called “{clash.name}”.")
+        return name
 
     def clean(self):
         data = super().clean()

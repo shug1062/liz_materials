@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from . import margins, reports, silver, statements, suppliers
+from .forms import MaterialForm
 from .models import (
     Category, Material, Payment, PriceChange, Project, Purchase, SilverPrice, Student, StudioClass, StudioSettings,
     estimated_unit_cost,
@@ -798,6 +799,14 @@ class ClassesAndArchiveTests(TestCase):
         Student.objects.create(name="Craft fair", class_name="Fairs", is_sales_channel=True)
         self.assertFalse(StudioClass.objects.filter(name="Fairs").exists())
 
+    def test_class_names_differing_only_by_capitals_are_the_same_class(self):
+        Student.objects.create(name="Pam", class_name="autumn ")
+        self.assertEqual(Student.objects.get(name="Pam").class_name, "Autumn")
+        self.assertEqual(StudioClass.objects.filter(name__iexact="autumn").count(), 1)
+        response = self.client.post(reverse("tracker:class_add"), {"name": "WINTER"})
+        self.assertContains(response, "already a class called")
+        self.assertEqual(StudioClass.objects.filter(name__iexact="winter").count(), 1)
+
     def test_archive_is_previewed_not_automatic(self):
         response = self.client.get(reverse("tracker:archive_students"))
         self.assertEqual({s.name for s in response.context["candidates"]}, {"Olive", "Lou"})
@@ -913,6 +922,45 @@ class ReportsTests(TestCase):
         sales = self.client.get(reverse("tracker:reports_csv", args=["sales"]))
         rows = sales.content.decode("utf-8-sig").splitlines()
         self.assertEqual(rows[1].split(",")[:5], ["2026-04-05", "Amy", "Tue", "Material", "Jump rings"])
+
+
+class SilverReportTests(TestCase):
+    def setUp(self):
+        StudioClass.objects.create(name="Wed 11 AM", start_date=date(2026, 9, 9), end_date=date(2026, 10, 28))
+        amy = Student.objects.create(name="Amy", class_name="Wed 11 AM")
+        bea = Student.objects.create(name="Bea", class_name="Rings course")
+        sheet = make_material(name="Silver Sheet", pricing_type="per_gram", unit_type="gram", base_price=Decimal("2.50"),
+                              pack_quantity=Decimal("1"), in_silver_report=True)
+        rings = make_material(name="8mm rings", pricing_type="per_gram_item", unit_type="gram", base_price=Decimal("2.80"),
+                              pack_quantity=Decimal("1"), weight_per_unit=Decimal("0.215"), in_silver_report=True)
+        pack = make_material(name="4mm pack rings", pack_quantity=Decimal("200"), in_silver_report=True)
+        copper = make_material(name="Copper Sheet", pricing_type="per_gram", unit_type="gram", pack_quantity=Decimal("1"))
+        for student, material, qty, when in [
+            (amy, sheet, "12.5", date(2026, 9, 9)), (amy, rings, "4", date(2026, 9, 16)), (amy, pack, "20", date(2026, 9, 16)),
+            (amy, copper, "30", date(2026, 9, 16)), (bea, sheet, "8", date(2026, 10, 3)),
+        ]:
+            p = Purchase(student=student, material=material, quantity=Decimal(qty), purchase_date=when)
+            p.set_price(reprice=True)
+            p.save()
+
+    def test_grams_by_class_lifetime(self):
+        rows = {r["label"]: r for r in self.client.get(reverse("tracker:reports")).context["silver_by_class"]}
+        self.assertEqual(set(rows), {"Wed 11 AM", "Rings course"})
+        wed = rows["Wed 11 AM"]
+        self.assertEqual(wed["grams"], Decimal("13.36"))  # 12.5 g sheet + 4 rings × 0.215 g
+        self.assertEqual(wed["pieces"], [("4mm pack rings", Decimal("20"))])
+        self.assertEqual((wed["start"], wed["end"], wed["dates_set"], wed["n_days"]),
+                         (date(2026, 9, 9), date(2026, 10, 28), True, 2))
+        rings_course = rows["Rings course"]
+        self.assertEqual((rings_course["grams"], rings_course["start"], rings_course["end"], rings_course["dates_set"]),
+                         (Decimal("8.00"), date(2026, 10, 3), date(2026, 10, 3), False))
+
+    def test_lesson_fees_cannot_count_as_silver(self):
+        form = MaterialForm(data={"name": "Lesson", "kind": "lesson", "pricing_type": "fixed", "unit_type": "item",
+                                  "base_price": "30", "pack_quantity": "1", "markup_percentage": "0",
+                                  "in_silver_report": "on", "price_date": "2026-10-01"})
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertFalse(form.cleaned_data["in_silver_report"])
 
 
 class PriceHistoryAndMarginTests(TestCase):
@@ -1356,3 +1404,95 @@ class TermDatesTests(TestCase):
         self.assertContains(response, "before it starts")
         self.assertContains(self.client.post(self.url, {"end": "2026-08-01"}), "Tick at least one class.")
         self.assertContains(self.client.post(self.url, {"studio_class": [self.prev.pk]}), "Enter a start date")
+
+
+class CourseFeeTests(TestCase):
+    def setUp(self):
+        self.studio_class = StudioClass.objects.create(name="Thurs 11am")
+        self.amy = Student.objects.create(name="Amy", class_name="Thurs 11am")
+        self.ben = Student.objects.create(name="Ben", class_name="Thurs 11am")
+        self.cat = Student.objects.create(name="Cat", class_name="Thurs 11am")
+        Payment.objects.create(student=self.amy, amount=Decimal("200"), notes="10 week course payment")
+        self.url = reverse("tracker:class_charge", args=[self.studio_class.pk])
+
+    def test_charging_a_class_turns_course_payments_into_a_real_balance(self):
+        self.assertEqual(self.client.get(self.url).context["chosen"], {self.amy.pk, self.ben.pk, self.cat.pk})
+        response = self.client.post(self.url, {"description": "Autumn term", "amount": "180", "charge_date": "2026-09-10",
+                                               "student": [self.amy.pk, self.ben.pk]})
+        self.assertRedirects(response, self.studio_class.get_absolute_url())
+        balances = {s.name: s.balance for s in Student.objects.with_balances()}
+        self.assertEqual(balances, {"Amy": Decimal("20.00"), "Ben": Decimal("-180.00"), "Cat": Decimal("0")})
+
+        fee = Purchase.objects.filter(student=self.ben).get()
+        self.assertEqual((fee.material.kind, fee.material.is_active, fee.unit_cost, fee.notes, fee.class_name),
+                         ("lesson", False, Decimal("0"), "Autumn term", "Thurs 11am"))
+        reports_page = self.client.get(reverse("tracker:reports")).context
+        self.assertEqual((reports_page["lesson_fees"], reports_page["total"]["sales"]), (Decimal("360.00"), Decimal("0")))
+        self.assertEqual(statements.statement_for(self.ben).items[0]["label"], "Course fee – Autumn term × 1")
+        self.assertNotContains(self.client.get(reverse("tracker:class_basket", args=[self.ben.pk])), "Course fee")
+
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        self.assertFalse(Purchase.objects.exists())
+
+    def test_needs_students_and_a_valid_amount(self):
+        self.assertContains(self.client.post(self.url, {"description": "Term", "amount": "50", "charge_date": "2026-09-10"}),
+                            "Tick at least one student.")
+        self.client.post(self.url, {"description": "Term", "amount": "0", "charge_date": "2026-09-10",
+                                    "student": [self.amy.pk]})
+        self.assertFalse(Purchase.objects.exists())
+
+
+class DailySilverFetchTests(TestCase):
+    def test_fetch_today_only_fetches_once_a_day(self):
+        with patch("tracker.suppliers.fetch_silver_price_per_kg", return_value=Decimal("2500")) as fetch:
+            first = silver.fetch_today()
+            second = silver.fetch_today()
+        self.assertEqual((first.pk, fetch.call_count), (second.pk, 1))
+
+    def test_background_check_survives_being_offline(self):
+        from tracker import background
+        with patch("tracker.suppliers.fetch_silver_price_per_kg", side_effect=suppliers.SupplierError("offline")):
+            background.check_silver_price()
+        self.assertFalse(SilverPrice.objects.exists())
+
+    def test_background_thread_can_be_turned_off(self):
+        from tracker import background
+        with self.settings(SILVER_AUTO_FETCH=False), patch("tracker.background.threading.Thread") as thread:
+            background.start()
+        thread.assert_not_called()
+
+
+class ClassDayTests(TestCase):
+    def setUp(self):
+        self.studio_class = StudioClass.objects.create(name="Wed 5pm")
+        self.amy = Student.objects.create(name="Amy", class_name="Wed 5pm")
+        self.ben = Student.objects.create(name="Ben", class_name="Wed 5pm")
+        sheet = make_material(name="Silver sheet", pricing_type="per_gram", unit_type="gram", base_price=Decimal("2.50"),
+                              pack_quantity=Decimal("1"), markup_percentage=Decimal("0"), in_silver_report=True)
+        rings = make_material(name="Jump rings")  # £0.12 each, not silver-counted
+        self.day = date(2026, 10, 21)
+        for student, material, qty in [(self.amy, sheet, "4"), (self.amy, rings, "10"), (self.ben, sheet, "2.5")]:
+            p = Purchase(student=student, material=material, quantity=Decimal(qty), purchase_date=self.day)
+            p.set_price(reprice=True)
+            p.save()
+        Payment.objects.create(student=self.amy, amount=Decimal("11.20"), payment_method="Card", payment_date=self.day)
+        Payment.objects.create(student=self.ben, amount=Decimal("5"), payment_date=self.day - timedelta(days=7))
+        self.url = reverse("tracker:class_day", args=[self.studio_class.pk])
+
+    def test_summary_of_a_class_day(self):
+        context = self.client.get(self.url).context  # defaults to the latest day with sales
+        self.assertEqual(context["day"], self.day)
+        self.assertEqual([r["student"].name for r in context["rows"]], ["Amy", "Ben"])
+        self.assertEqual((context["charged"], context["taken"]["card"], context["taken"]["total"]),
+                         (Decimal("17.45"), Decimal("11.20"), Decimal("11.20")))
+        self.assertEqual(context["owed"], Decimal("1.25"))  # Ben: 6.25 bought, 5.00 paid last week
+        self.assertEqual((context["silver_grams"], context["silver"]), (Decimal("6.50"), [("Silver sheet", Decimal("6.50"))]))
+
+    def test_other_days_and_empty_days(self):
+        paid_only = self.client.get(self.url, {"date": "2026-10-14"}).context
+        self.assertEqual([(r["student"].name, r["paid"], r["items"]) for r in paid_only["rows"]],
+                         [("Ben", Decimal("5.00"), [])])
+        response = self.client.get(self.url, {"date": "2026-10-07"})
+        self.assertContains(response, "Nothing recorded for this class on this day.")
+        self.assertContains(response, "Print")
+        self.assertContains(self.client.get(self.studio_class.get_absolute_url()), self.url)

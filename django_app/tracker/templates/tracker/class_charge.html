@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb" href="{{ studio_class.get_absolute_url }}">← {{ studio_class.name }}</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Course fees</p>
+    <h1>Charge {{ studio_class.name }}</h1>
+    <p class="lede">Adds the fee to each ticked student’s account as a lesson fee, so money they’ve already paid towards the course is matched against it. It shows separately from materials in Reports.</p>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel">
+    <div class="body">
+      <div class="grid">
+        <div>{{ form.description.errors }}<label>{{ form.description.label }} {{ form.description }}</label></div>
+        <div>{{ form.amount.errors }}<label>{{ form.amount.label }} {{ form.amount }}</label></div>
+        <div>{{ form.charge_date.errors }}<label>{{ form.charge_date.label }} {{ form.charge_date }}</label></div>
+      </div>
+      <p class="helptext">For a course that was paid for earlier, use the date it started so statements read in order.</p>
+    </div>
+    <figure>
+    <table>
+      <thead><tr><th><input type="checkbox" data-check-group="charge" aria-label="Tick everyone"></th><th>Student</th><th class="num">Balance now</th></tr></thead>
+      <tbody>
+      {% for s in students %}
+        <tr>
+          <td><input type="checkbox" name="student" value="{{ s.pk }}" data-group="charge" id="student-{{ s.pk }}"{% if s.pk in chosen %} checked{% endif %}></td>
+          <td><label for="student-{{ s.pk }}">{{ s.name }}</label></td>
+          <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3" class="empty">No students in this class.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </figure>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ studio_class.get_absolute_url }}">Cancel</a>
+      <button type="submit">Charge ticked students</button>
+    </div>
+  </section>
+</form>
+{% endblock %}

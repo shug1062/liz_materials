@@ -21,7 +21,7 @@ from . import reports as reports_lib
 from .forms import (
     BackupSettingsForm, DateRangeForm, MaterialForm, PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm,
     SilverPriceForm, StudentForm,
-    StudioClassForm, TermDatesForm,
+    StudioClassForm, TermDatesForm, CourseFeeForm,
 )
 from .models import (
     ZERO, Category, Material, Payment, PriceChange, Project, Purchase, SilverPrice, Student, StudioClass, StudioSettings,
@@ -623,6 +623,7 @@ def reports(request):
          for r in purchases.values("material__name", "material__unit_type").annotate(quantity=Sum("quantity"), **sums)),
         key=lambda row: -row["profit"],
     )
+    silver_by_class = reports_lib.silver_by_class(purchases, NO_CLASS)
     return render(request, "tracker/reports.html", {
         "form": form,
         "start": start,
@@ -641,6 +642,8 @@ def reports(request):
         "n_silver_rated": silver_sales.exclude(silver_rate=None).count(),
         "n_silver_unrated": silver_sales.filter(silver_rate=None).count(),
         "by_material": by_material,
+        "silver_by_class": silver_by_class,
+        "silver_totals": {key: sum((r[key] for r in silver_by_class), ZERO) for key in ("grams", "sold", "n_pieces")},
         "n_estimated": purchases.filter(cost_is_estimate=True).count(),
         "n_purchases": purchases.count(),
     })
@@ -864,15 +867,16 @@ def price_apply(request):
 
 
 def silver_price(request):
-    """HTMX partial for the dashboard card; refreshes once a day or on demand."""
+    """HTMX partial for the dashboard card; the background check normally fetches it already."""
     latest = SilverPrice.objects.first()
-    stale = latest is None or timezone.localtime(latest.fetched_at).date() != timezone.localdate()
     error = ""
-    if stale or request.GET.get("refresh"):
-        try:
+    try:
+        if request.GET.get("refresh"):
             latest = SilverPrice.objects.create(price_per_kg=suppliers.fetch_silver_price_per_kg())
-        except suppliers.SupplierError as exc:
-            error = str(exc)
+        else:
+            latest = silver.fetch_today()
+    except suppliers.SupplierError as exc:
+        error = str(exc)
     previous = SilverPrice.objects.filter(fetched_at__date__lt=timezone.localdate()).first() if latest else None
     return render(request, "tracker/partials/silver_price.html", {"silver": latest, "previous": previous, "error": error})
 
@@ -945,6 +949,53 @@ def class_list(request):
         "classes": classes,
         "n_candidates": len(_archive_candidates()),
         "n_archived": Student.objects.filter(is_archived=True).count(),
+    })
+
+
+def class_day(request, pk):
+    """End-of-class summary for one session; private (shows balances), so Liz mode only."""
+    studio_class = get_object_or_404(StudioClass, pk=pk)
+    days = list(Purchase.objects.filter(class_name=studio_class.name)
+                .dates("purchase_date", "day", order="DESC")[:10])
+    try:
+        day = date.fromisoformat(request.GET.get("date", ""))
+    except ValueError:
+        day = timezone.localdate() if not days or timezone.localdate() in days else days[0]
+    return render(request, "tracker/class_day.html", {
+        "studio_class": studio_class,
+        "day": day,
+        "days": days,
+        **reports_lib.class_day(studio_class.name, day),
+    })
+
+
+def class_charge(request, pk):
+    """Charge a term or course fee to every ticked student in a class, recorded as a lesson fee (with Undo)."""
+    studio_class = get_object_or_404(StudioClass, pk=pk)
+    students = list(Student.objects.with_balances().active().filter(class_name=studio_class.name).order_by("name"))
+    form = CourseFeeForm(request.POST or None)
+    chosen = {int(pk) for pk in request.POST.getlist("student") if pk.isdigit()}
+    if request.method == "POST" and form.is_valid():
+        targets = [s for s in students if s.pk in chosen]
+        if not targets:
+            form.add_error(None, "Tick at least one student.")
+        else:
+            fee, amount = Material.course_fee(), money(form.cleaned_data["amount"])
+            description = form.cleaned_data["description"].strip()
+            with transaction.atomic():
+                created = [Purchase.objects.create(
+                    student=s, material=fee, quantity=Decimal("1"), unit_price=amount, total_cost=amount,
+                    unit_cost=ZERO, cost_total=ZERO, purchase_date=form.cleaned_data["charge_date"], notes=description,
+                ) for s in targets]
+            n = len(created)
+            undo.remember(request, f"Charged {n} student{'s' if n != 1 else ''} £{amount} for {description}.",
+                          created=created)
+            return redirect(studio_class)
+    return render(request, "tracker/class_charge.html", {
+        "studio_class": studio_class,
+        "students": students,
+        "form": form,
+        "chosen": chosen if request.method == "POST" else {s.pk for s in students},
     })
 
 
