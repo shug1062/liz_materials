@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{% if selected %}Class{% else %}All classes{% endif %}</p>
+    <h1>{% if selected %}{{ selected }}{% else %}Students{% endif %}</h1>
+    {% if selected %}<p class="lede"><a href="{% url 'tracker:student_list' %}">← Show all classes</a></p>{% endif %}
+  </div>
+  <div class="btn-row">
+    <a role="button" class="ghost" href="{% url 'tracker:class_reorder' %}">Reorder classes</a>
+    <a role="button" href="{% url 'tracker:student_add' %}{% if selected %}?class_name={{ selected|urlencode }}{% endif %}">+ Add student</a>
+  </div>
+</div>
+
+{% for group in groups %}
+<details class="group" {% if group.open %}open{% endif %}>
+  <summary>
+    <span class="title">{{ group.name }}</span>
+    <span class="badge">{{ group.students|length }} student{{ group.students|length|pluralize }}</span>
+    {% if group.owed %}<span class="meta owes">Owed {{ group.owed|gbp }}</span>{% endif %}
+    {% if group.credit %}<span class="meta credit">Credit {{ group.credit|gbp }}</span>{% endif %}
+  </summary>
+  <figure>
+  <table class="students-table">
+    <thead><tr><th>Name</th><th class="num">Purchases</th><th class="num">Payments</th><th class="num">Balance</th><th></th></tr></thead>
+    <tbody>
+    {% for s in group.students %}
+      <tr>
+        <td><a href="{{ s.get_absolute_url }}"><strong>{{ s.name }}</strong></a>{% if s.email or s.phone %}<span class="sub-text">{{ s.email|default:s.phone }}</span>{% endif %}</td>
+        <td class="num">{{ s.total_purchases|gbp }}</td>
+        <td class="num">{{ s.total_payments|gbp }}</td>
+        <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}</td>
+        <td>
+          <div class="actions">
+            <a class="small" role="button" href="{% url 'tracker:purchase_new' %}?student={{ s.pk }}&class_name={{ s.class_name|urlencode }}&next={{ request.get_full_path|urlencode }}">Purchase</a>
+            <a class="small ghost" role="button" href="{% url 'tracker:payment_new' %}?student={{ s.pk }}&class_name={{ s.class_name|urlencode }}&next={{ request.get_full_path|urlencode }}">Payment</a>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </figure>
+</details>
+{% empty %}
+<div class="panel"><div class="body empty">No students yet.</div></div>
+{% endfor %}
+
+{% if channels %}
+<h2 class="section-title">Sales channels</h2>
+<div class="chips">
+  {% for c in channels %}<a class="chip" href="{{ c.get_absolute_url }}">{{ c.name }}</a>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

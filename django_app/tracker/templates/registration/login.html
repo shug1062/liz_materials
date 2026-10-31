@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Log in · The Silver Bird{% endblock %}
+{% block content %}
+<section class="panel form-card narrow">
+  <header><h3>Welcome back</h3></header>
+  <form method="post">
+    <div class="body">
+      {% csrf_token %}
+      {% if form.errors %}<p class="owes">Wrong username or password.</p>{% endif %}
+      <label>Username <input name="username" autocomplete="username" autocapitalize="none" required autofocus></label>
+      <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+      <input type="hidden" name="next" value="{{ next }}">
+    </div>
+    <div class="form-actions"><button type="submit">Log in</button></div>
+  </form>
+</section>
+{% endblock %}

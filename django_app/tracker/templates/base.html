@@ -1,0 +1,55 @@
+{% load static %}<!doctype html>
+<html lang="en-GB" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>{% block title %}The Silver Bird · Studio{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{% static 'tracker/favicon.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'tracker/apple-touch-icon.png' %}">
+  <meta name="apple-mobile-web-app-title" content="Silver Bird">
+  <link rel="stylesheet" href="{% static 'tracker/pico.min.css' %}">
+  <link rel="stylesheet" href="{% static 'tracker/theme.css' %}">
+  <script src="{% static 'tracker/htmx.min.js' %}" defer></script>
+  <script src="{% static 'tracker/Sortable.min.js' %}" defer></script>
+  <script src="{% static 'tracker/app.js' %}" defer></script>
+</head>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+  {% with section=request.resolver_match.url_name|default:"" %}
+  <header class="site-header">
+    <div class="container">
+      <div class="bar">
+        <a href="{% url 'tracker:dashboard' %}" class="brand">
+          <img src="{% static 'tracker/logo.png' %}" alt="The Silver Bird logo">
+          <span><span class="brand-name">The Silver Bird</span><span class="brand-sub">Studio &amp; jewellery school</span></span>
+        </a>
+        <span class="today">{% now "l j F Y" %}</span>
+      </div>
+      {% if user.is_authenticated %}
+      <nav class="site-nav" aria-label="Main">
+        <a href="{% url 'tracker:dashboard' %}" {% if section == "dashboard" %}class="active"{% endif %}>Dashboard</a>
+        <a href="{% url 'tracker:student_list' %}" {% if "student" in section or "class" in section %}class="active"{% endif %}>Students</a>
+        <a href="{% url 'tracker:purchase_new' %}" {% if "purchase" in section %}class="active"{% endif %}>Record purchase</a>
+        <a href="{% url 'tracker:payments_report' %}" {% if "payment" in section %}class="active"{% endif %}>Payments</a>
+        <a href="{% url 'tracker:material_list' %}" {% if "material" in section or "price" in section %}class="active"{% endif %}>Materials</a>
+        <a href="{% url 'tracker:project_list' %}" {% if "project" in section %}class="active"{% endif %}>Projects</a>
+        <span class="spacer"></span>
+        <a href="{% url 'admin:index' %}">Settings</a>
+        {% if require_login %}<form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}<button class="small ghost">Log out</button></form>{% endif %}
+      </nav>
+      {% endif %}
+    </div>
+  </header>
+  {% endwith %}
+  <main class="container">
+    {% for message in messages %}
+      <div class="flash {{ message.tags }}" role="status"><span class="gem" aria-hidden="true"></span>{{ message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <img src="{% static 'tracker/logo.png' %}" alt="">
+    <p>Handmade in Cambridgeshire</p>
+  </footer>
+</body>
+</html>

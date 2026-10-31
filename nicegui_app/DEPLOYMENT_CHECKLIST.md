@@ -169,5 +169,5 @@ After deployment, verify:
 ---
 **Package Created**: January 7, 2026
 **File**: jewellery_tracker_deployment.zip (36KB)
-**Location**: /Users/kpxp895/Library/CloudStorage/OneDrive-AZCollaboration/coding_area/liz_materials/
+**Location**: /Users/kpxp895/Library/CloudStorage/OneDrive-AZCollaboration/coding_area/liz_materials/nicegui_app/
 **Status**: ✅ READY FOR DEPLOYMENT

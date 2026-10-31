@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Work in progress</p>
+    <h1>Projects</h1>
+    <p class="lede">Link purchases to a project to see what each piece costs to make.</p>
+  </div>
+  <a role="button" href="{% url 'tracker:project_add' %}">+ New project</a>
+</div>
+
+{% for r in rows %}
+<details class="group" {% if forloop.first %}open{% endif %}>
+  <summary>
+    <span class="title">{{ r.project.name }}</span>
+    <span class="badge">{{ r.students|length }} student{{ r.students|length|pluralize }}</span>
+    <span class="meta">Total <strong>{{ r.total|gbp }}</strong>{% if r.average %} · {{ r.average|gbp }} per student{% endif %}</span>
+  </summary>
+  <div class="panel-body">
+    {% if r.project.description %}<p class="lede">{{ r.project.description }}</p>{% endif %}
+    {% if r.students %}
+      <p class="chips">{% for s in r.students %}<a class="chip" href="{{ s.get_absolute_url }}">{{ s.name }}</a>{% endfor %}</p>
+    {% endif %}
+  </div>
+  <figure>
+  <table>
+    <thead><tr><th>Material used</th><th class="num">Quantity</th><th class="num">Cost</th></tr></thead>
+    <tbody>
+    {% for m in r.materials %}
+      <tr><td>{{ m.material__name }}</td><td class="num">{{ m.quantity|floatformat:"-2" }} <span class="unit">{{ m.material__unit_type }}</span></td><td class="num">{{ m.cost|gbp }}</td></tr>
+    {% empty %}
+      <tr><td colspan="3" class="empty">No purchases linked to this project yet – pick it when recording a purchase.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </figure>
+  <div class="form-actions">
+    <form method="post" action="{% url 'tracker:project_delete' r.project.pk %}" class="inline"
+          onsubmit="return confirm('Delete the project “{{ r.project.name|escapejs }}”? Its purchases are kept.');">
+      {% csrf_token %}<button class="small danger-ghost">Delete</button>
+    </form>
+    <a role="button" class="small ghost" href="{% url 'tracker:project_edit' r.project.pk %}">Edit</a>
+  </div>
+</details>
+{% empty %}
+<div class="panel"><div class="body empty">No projects yet.</div></div>
+{% endfor %}
+{% endblock %}

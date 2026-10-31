@@ -1,0 +1,41 @@
+from django.urls import path
+
+from . import views
+
+app_name = "tracker"
+
+urlpatterns = [
+    path("", views.dashboard, name="dashboard"),
+    path("students/", views.student_list, name="student_list"),
+    path("students/add/", views.student_form, name="student_add"),
+    path("students/<int:pk>/", views.student_detail, name="student_detail"),
+    path("students/<int:pk>/edit/", views.student_form, name="student_edit"),
+    path("students/<int:pk>/delete/", views.student_delete, name="student_delete"),
+    path("students/balance/", views.student_balance, name="student_balance"),
+    path("purchases/new/", views.purchase_form, name="purchase_new"),
+    path("purchases/<int:pk>/edit/", views.purchase_form, name="purchase_edit"),
+    path("purchases/<int:pk>/delete/", views.purchase_delete, name="purchase_delete"),
+    path("purchases/price-preview/", views.price_preview, name="price_preview"),
+    path("payments/", views.payments_report, name="payments_report"),
+    path("payments/new/", views.payment_form, name="payment_new"),
+    path("payments/<int:pk>/edit/", views.payment_form, name="payment_edit"),
+    path("payments/<int:pk>/delete/", views.payment_delete, name="payment_delete"),
+    path("materials/", views.material_list, name="material_list"),
+    path("materials/add/", views.material_form, name="material_add"),
+    path("materials/<int:pk>/edit/", views.material_form, name="material_edit"),
+    path("materials/<int:pk>/toggle/", views.material_toggle, name="material_toggle"),
+    path("materials/<int:pk>/delete/", views.material_delete, name="material_delete"),
+    path("materials/price-calc/", views.material_price_calc, name="material_price_calc"),
+    path("materials/fetch/", views.material_fetch, name="material_fetch"),
+    path("materials/prices/check/", views.price_check, name="price_check"),
+    path("materials/prices/apply/", views.price_apply, name="price_apply"),
+    path("materials/arrange/", views.material_arrange, name="material_arrange"),
+    path("materials/arrange/categories/", views.category_order, name="category_order"),
+    path("materials/arrange/materials/", views.material_order, name="material_order"),
+    path("classes/reorder/", views.class_reorder, name="class_reorder"),
+    path("silver-price/", views.silver_price, name="silver_price"),
+    path("projects/", views.project_list, name="project_list"),
+    path("projects/add/", views.project_form, name="project_add"),
+    path("projects/<int:pk>/edit/", views.project_form, name="project_edit"),
+    path("projects/<int:pk>/delete/", views.project_delete, name="project_delete"),
+]

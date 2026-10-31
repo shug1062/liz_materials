@@ -12,7 +12,7 @@ Copy the entire project folder to your Windows laptop.
 ### 2. Open Command Prompt or PowerShell
 Navigate to the project folder:
 ```cmd
-cd path\to\liz_materials
+cd path\to\liz_materials\nicegui_app
 ```
 
 ### 3. Create a Virtual Environment (Recommended)

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Overview</p>
+    <h1>Dashboard</h1>
+  </div>
+  <div class="btn-row">
+    <a role="button" href="{% url 'tracker:purchase_new' %}">Record purchase</a>
+    <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}">Record payment</a>
+  </div>
+</div>
+
+<section class="stats">
+  <div class="stat sapphire">
+    <div class="label"><span class="gem"></span>Class payments</div>
+    <div class="value">{{ class_totals.total|gbp }}</div>
+    <div class="detail">Cash <strong>{{ class_totals.cash|gbp }}</strong> · Card <strong>{{ class_totals.card|gbp }}</strong></div>
+  </div>
+  <div class="stat ruby">
+    <div class="label"><span class="gem"></span>Owed by students</div>
+    <div class="value">{{ class_debt|gbp }}</div>
+    <div class="detail"><a href="{% url 'tracker:student_list' %}">See who owes →</a></div>
+  </div>
+  <div class="stat amethyst">
+    <div class="label"><span class="gem"></span>Student credit</div>
+    <div class="value">{{ class_credit|gbp }}</div>
+    <div class="detail">Paid in advance</div>
+  </div>
+  <div class="stat emerald">
+    <div class="label"><span class="gem"></span>Active materials</div>
+    <div class="value">{{ material_count }}</div>
+    <div class="detail"><a href="{% url 'tracker:material_list' %}">View price list →</a></div>
+  </div>
+  <div class="stat steel" hx-get="{% url 'tracker:silver_price' %}" hx-trigger="load">
+    <div class="label"><span class="gem"></span>Silver today</div>
+    <div class="value settled">…</div>
+    <div class="detail">Checking Cooksongold</div>
+  </div>
+</section>
+
+{% if channel_totals %}
+<h2 class="section-title">Sales channels</h2>
+<section class="stats">
+  {% for channel, totals in channel_totals %}
+  <div class="stat steel compact">
+    <div class="label"><span class="gem"></span><a href="{{ channel.get_absolute_url }}">{{ channel.name }}</a></div>
+    <div class="value">{{ totals.total|gbp }}</div>
+    <div class="detail">Cash <strong>{{ totals.cash|gbp }}</strong> · Card <strong>{{ totals.card|gbp }}</strong></div>
+  </div>
+  {% endfor %}
+  <div class="stat compact neutral">
+    <div class="label"><span class="gem"></span>All sales</div>
+    <div class="value">{{ sales_totals.total|gbp }}</div>
+    <div class="detail">Cash <strong>{{ sales_totals.cash|gbp }}</strong> · Card <strong>{{ sales_totals.card|gbp }}</strong></div>
+  </div>
+</section>
+{% endif %}
+
+<h2 class="section-title">Classes</h2>
+<div class="chips">
+  {% for name, count in classes %}
+    <a class="chip" href="{% url 'tracker:student_list' %}?class_name={{ name|urlencode }}">{{ name }} <span class="count">{{ count }}</span></a>
+  {% empty %}
+    <p class="lede">No classes yet – add a student with a class name to get started.</p>
+  {% endfor %}
+  <a class="chip add" href="{% url 'tracker:student_add' %}">+ Add student</a>
+</div>
+
+<h2 class="section-title">Recent activity</h2>
+<section class="panel">
+  <header><h3>Purchases</h3><a href="{% url 'tracker:purchase_new' %}" class="small" role="button">Record purchase</a></header>
+  {% include "tracker/partials/purchase_table.html" with purchases=recent_purchases show_student=True %}
+</section>
+<section class="panel">
+  <header><h3>Payments</h3><a href="{% url 'tracker:payments_report' %}">View all payments →</a></header>
+  {% include "tracker/partials/payment_table.html" with payments=recent_payments show_student=True %}
+</section>
+{% endblock %}

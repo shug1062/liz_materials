@@ -1,0 +1,8 @@
+{% load money %}<span id="fetch-spinner" class="htmx-indicator spinner">Checking supplier…</span>
+{% if quote.error %}
+  <p class="fetch-status error">{{ quote.error }}</p>
+{% else %}
+  <p class="fetch-status ok">Supplier price {{ quote.price|gbp }}{% if quote.weight_per_unit %} · {{ quote.weight_per_unit|floatformat:"-4" }}g per item{% endif %} – filled in below. Save to keep it.</p>
+  <span id="base-price-field" class="field-slot" hx-swap-oob="true">{{ form.base_price }}</span>
+  {% if quote.weight_per_unit %}<span id="weight-field" class="field-slot" hx-swap-oob="true">{{ form.weight_per_unit }}</span>{% endif %}
+{% endif %}

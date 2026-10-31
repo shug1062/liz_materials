@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Accounts</p>
+    <h1>Payments</h1>
+  </div>
+  <a role="button" href="{% url 'tracker:payment_new' %}">Record payment</a>
+</div>
+<section class="panel">
+  <div class="body">
+    <form hx-get="{% url 'tracker:payments_report' %}" hx-target="#payments" hx-trigger="change" hx-push-url="true">
+      <div class="filters">
+        <label>Show {{ form.group }}</label>
+        <label>Student {{ form.student }}</label>
+        <label>From {{ form.start }}</label>
+        <label>To {{ form.end }}</label>
+      </div>
+      <noscript><button type="submit">Apply</button></noscript>
+    </form>
+    <a href="{% url 'tracker:payments_report' %}" class="small">Clear filters</a>
+  </div>
+</section>
+<div id="payments">{% include "tracker/partials/payments_table.html" %}</div>
+{% endblock %}

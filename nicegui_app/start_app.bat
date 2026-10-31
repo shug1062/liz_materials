@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 echo ====================================
 echo Silver Jewellery Studio Tracker
 echo ====================================

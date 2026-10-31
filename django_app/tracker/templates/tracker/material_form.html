@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel form-card wide">
+  <header><h3>{% if material %}Edit {{ material.name }}{% else %}Add material{% endif %}</h3></header>
+  <form method="post" id="material-form">
+    <div class="body">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      {{ form.name.errors }}<label>Name {{ form.name }}</label>
+      <div class="grid">
+        <div>{{ form.category_name.errors }}<label>Category {{ form.category_name }}</label></div>
+        <div>{{ form.unit_type.errors }}<label>Sold per {{ form.unit_type }}</label></div>
+      </div>
+      <datalist id="category-names">{% for c in category_names %}<option value="{{ c }}">{% endfor %}</datalist>
+
+      {{ form.pricing_type.errors }}<label>Pricing {{ form.pricing_type }}</label>
+      <p class="helptext">Fixed: pack or item price. Per gram: sheet, wire, tube sold by weight. Per gram × item weight: jump rings and other items sold by weight but used one at a time.</p>
+
+      {{ form.supplier_url.errors }}
+      <label>Supplier link
+        <span class="input-with-button">
+          {{ form.supplier_url }}
+          <button type="button" class="ghost small" hx-post="{% url 'tracker:material_fetch' %}"
+                  hx-include="#id_supplier_url, #id_pricing_type" hx-target="#fetch-status"
+                  hx-indicator="#fetch-spinner">Fetch price</button>
+        </span>
+      </label>
+      <div id="fetch-status"><span id="fetch-spinner" class="htmx-indicator spinner">Checking supplier…</span></div>
+
+      <div class="grid">
+        <div>{{ form.base_price.errors }}<label>Supplier price (£) <span id="base-price-field" class="field-slot">{{ form.base_price }}</span></label></div>
+        <div data-for-pricing="fixed per_gram">{{ form.pack_quantity.errors }}<label>Items in pack {{ form.pack_quantity }}</label></div>
+        <div data-for-pricing="per_gram_item">{{ form.weight_per_unit.errors }}<label>Weight per item (g) <span id="weight-field" class="field-slot">{{ form.weight_per_unit }}</span></label></div>
+        <div>{{ form.markup_percentage.errors }}<label>Markup % {{ form.markup_percentage }}</label></div>
+      </div>
+
+      <div id="price-calc" hx-get="{% url 'tracker:material_price_calc' %}" hx-include="#material-form"
+           hx-trigger="load, input changed delay:300ms from:#material-form, change from:#material-form, fetched from:body"></div>
+
+      <div class="grid">
+        <div>{{ form.supplier.errors }}<label>Supplier name {{ form.supplier }}</label></div>
+        <div><label class="checkbox-row">{{ form.is_active }} Show in purchase list</label></div>
+      </div>
+      {{ form.notes.errors }}<label>Notes {{ form.notes }}</label>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{% url 'tracker:material_list' %}">Cancel</a>
+      <button type="submit">Save material</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

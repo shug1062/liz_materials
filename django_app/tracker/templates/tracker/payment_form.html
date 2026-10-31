@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel form-card">
+  <header><h3>{{ title }}</h3></header>
+  <form method="post">
+    <div class="body"
+         hx-get="{% url 'tracker:student_balance' %}" hx-trigger="change from:#id_student, load"
+         hx-target="#balance" hx-include="#id_student">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      {{ form.non_field_errors }}
+      {{ form.student.errors }}<label>Student {{ form.student }}</label>
+      <div id="balance" aria-live="polite"></div>
+      <div class="grid">
+        <div>{{ form.amount.errors }}<label>Amount (£) {{ form.amount }}</label></div>
+        <div>{{ form.payment_method.errors }}<label>Method {{ form.payment_method }}</label></div>
+      </div>
+      {{ form.payment_date.errors }}<label>Date {{ form.payment_date }}</label>
+      {{ form.notes.errors }}<label>Notes {{ form.notes }}</label>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ next }}">Cancel</a>
+      <button type="submit">Save payment</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb" href="{% url 'tracker:student_list' %}{% if student.class_name %}?class_name={{ student.class_name|urlencode }}{% endif %}">← {{ student.class_name|default:"Students" }}</a>
+
+<div class="page-head">
+  <div class="profile">
+    <div class="avatar" aria-hidden="true">{{ student.name|slice:":1"|upper }}</div>
+    <div>
+      <p class="eyebrow">{% if student.is_sales_channel %}Sales channel{% else %}{{ student.class_name|default:"Student" }}{% endif %}</p>
+      <h1>{{ student.name }}</h1>
+      <div class="contact">
+        {% if student.email %}<a href="mailto:{{ student.email }}">{{ student.email }}</a>{% endif %}
+        {% if student.phone %}<a href="tel:{{ student.phone }}">{{ student.phone }}</a>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="btn-row">
+    <a role="button" href="{% url 'tracker:purchase_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record purchase</a>
+    <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record payment</a>
+  </div>
+</div>
+
+{% if student.notes %}<p class="note">{{ student.notes }}</p>{% endif %}
+
+<section class="stats">
+  <div class="stat sapphire"><div class="label"><span class="gem"></span>Purchases</div><div class="value">{{ student.total_purchases|gbp }}</div></div>
+  <div class="stat emerald"><div class="label"><span class="gem"></span>Payments</div><div class="value">{{ student.total_payments|gbp }}</div></div>
+  <div class="stat {% if student.balance < 0 %}ruby{% elif student.balance > 0 %}amethyst{% else %}neutral{% endif %}">
+    <div class="label"><span class="gem"></span>Balance</div>
+    <div class="value">{% if student.balance < 0 %}{{ student.balance|gbp|cut:"-" }}{% else %}{{ student.balance|gbp }}{% endif %}</div>
+    <div class="detail">{% if student.balance < 0 %}Owed to the studio{% elif student.balance > 0 %}In credit{% else %}All settled{% endif %}</div>
+  </div>
+</section>
+
+<h2 class="section-title">Purchases</h2>
+<section class="panel">{% include "tracker/partials/purchase_table.html" %}</section>
+
+<h2 class="section-title">Payments</h2>
+<section class="panel">{% include "tracker/partials/payment_table.html" %}</section>
+
+<div class="btn-row footer-actions">
+  <a role="button" class="small ghost" href="{% url 'tracker:student_edit' student.pk %}">Edit details</a>
+  <form method="post" action="{% url 'tracker:student_delete' student.pk %}" class="inline"
+        onsubmit="return confirm('Delete {{ student.name|escapejs }} and ALL their purchases and payments? This cannot be undone.');">
+    {% csrf_token %}<button class="small danger-ghost">Delete student</button>
+  </form>
+</div>
+{% endblock %}

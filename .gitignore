@@ -7,7 +7,7 @@ __pycache__/
 env/
 venv/
 ENV/
-pages/__pycache__/*
+nicegui_app/pages/__pycache__/*
 
 # Database
 *.db
@@ -43,3 +43,5 @@ database_backups*
 silver_price_cache.json
 
 jewellery_tracker_deployment.zip
+
+django_app/.hidden

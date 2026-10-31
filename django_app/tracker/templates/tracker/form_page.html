@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel form-card">
+  <header><h3>{{ title }}</h3></header>
+  <form method="post">
+    <div class="body">
+      {% csrf_token %}
+      {{ form.as_div }}
+      {% if class_names %}<datalist id="class-names">{% for c in class_names %}<option value="{{ c }}">{% endfor %}</datalist>{% endif %}
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ cancel_url }}">Cancel</a>
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

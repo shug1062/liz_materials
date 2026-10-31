@@ -1,0 +1,13 @@
+{% load money %}<div class="label"><span class="gem"></span>Silver today</div>
+{% if silver %}
+  <div class="value">£{{ silver.price_per_gram|floatformat:3 }}<span class="unit"> /g</span></div>
+  <div class="detail">
+    {{ silver.price_per_kg|gbp }}/kg inc VAT
+    {% if previous %}{% if silver.price_per_kg > previous.price_per_kg %}<span class="owes">▲</span>{% elif silver.price_per_kg < previous.price_per_kg %}<span class="credit">▼</span>{% endif %}{% endif %}
+    <br>Updated {{ silver.fetched_at|date:"j M, H:i" }}
+    · <a href="#" hx-get="{% url 'tracker:silver_price' %}?refresh=1" hx-target="closest .stat">Refresh</a>
+  </div>
+{% else %}
+  <div class="value settled">–</div>
+{% endif %}
+{% if error %}<div class="detail owes">{{ error }}</div>{% endif %}

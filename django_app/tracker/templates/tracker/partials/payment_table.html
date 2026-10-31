@@ -1,0 +1,33 @@
+{% load money %}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>{% if show_student %}<th>Student</th>{% endif %}{% if show_class %}<th>Class</th>{% endif %}
+      <th class="num">Amount</th><th>Method</th><th>Notes</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in payments %}
+    <tr>
+      <td class="nowrap">{{ p.payment_date|date:"j M Y" }}</td>
+      {% if show_student %}<td><a href="{{ p.student.get_absolute_url }}">{{ p.student }}</a>{% if p.student.is_sales_channel %} <span class="badge channel">Sales</span>{% endif %}</td>{% endif %}
+      {% if show_class %}<td>{{ p.student.class_name|default:"–" }}</td>{% endif %}
+      <td class="num credit">{{ p.amount|gbp }}</td>
+      <td><span class="badge {{ p.payment_method|slugify }}">{{ p.payment_method }}</span></td>
+      <td>{{ p.notes|default:"–" }}</td>
+      <td>
+        <div class="actions">
+          <a class="small ghost" role="button" href="{% url 'tracker:payment_edit' p.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>
+          <button class="small danger-ghost"
+                  hx-post="{% url 'tracker:payment_delete' p.pk %}"
+                  hx-confirm="Delete payment of {{ p.amount|gbp }} from {{ p.student }}?">Delete</button>
+        </div>
+      </td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="7" class="empty">No payments.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</figure>

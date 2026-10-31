@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb" href="{% url 'tracker:material_list' %}">← Materials</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Arrange</p>
+    <h1>Material order</h1>
+    <p class="lede">Drag to set the order used in the price list and the purchase form. Changes save automatically.</p>
+  </div>
+  <div id="save-status" aria-live="polite"></div>
+</div>
+
+<div class="arrange-grid">
+  <section class="panel">
+    <header><h3>Categories</h3></header>
+    <form data-sortable class="sortable-list" hx-post="{% url 'tracker:category_order' %}" hx-trigger="end" hx-target="#save-status">
+      {% for c in categories %}
+        <div class="sortable-item"><span class="handle" aria-hidden="true">⠿</span><span class="capitalise">{{ c.name }}</span><input type="hidden" name="category" value="{{ c.pk }}"></div>
+      {% empty %}
+        <p class="empty">No categories yet.</p>
+      {% endfor %}
+    </form>
+  </section>
+
+  <div>
+    {% for category, items in groups %}
+    <section class="panel">
+      <header><h3 class="capitalise">{{ category.name|default:"Uncategorised" }}</h3><span class="badge">{{ items|length }}</span></header>
+      <form data-sortable class="sortable-list" hx-post="{% url 'tracker:material_order' %}" hx-trigger="end" hx-target="#save-status">
+        {% for m in items %}
+          <div class="sortable-item {% if not m.is_active %}inactive-item{% endif %}">
+            <span class="handle" aria-hidden="true">⠿</span>{{ m.name }}
+            {% if not m.is_active %}<span class="badge inactive">Hidden</span>{% endif %}
+            <input type="hidden" name="material" value="{{ m.pk }}">
+          </div>
+        {% empty %}
+          <p class="empty">No materials in this category.</p>
+        {% endfor %}
+      </form>
+    </section>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

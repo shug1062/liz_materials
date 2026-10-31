@@ -37,7 +37,7 @@
 
 ### File: `jewellery_tracker_deployment.zip`
 **Size**: 40 KB
-**Location**: `/Users/kpxp895/Library/CloudStorage/OneDrive-AZCollaboration/coding_area/liz_materials/`
+**Location**: `/Users/kpxp895/Library/CloudStorage/OneDrive-AZCollaboration/coding_area/liz_materials/nicegui_app/`
 
 ### What's Inside:
 ```
@@ -224,7 +224,7 @@ Simply provide:
 ## 📍 What To Do Next
 
 1. **Locate the ZIP file**:
-   - Path: `/Users/kpxp895/Library/CloudStorage/OneDrive-AZCollaboration/coding_area/liz_materials/`
+   - Path: `/Users/kpxp895/Library/CloudStorage/OneDrive-AZCollaboration/coding_area/liz_materials/nicegui_app/`
    - File: `jewellery_tracker_deployment.zip` (40 KB)
 
 2. **Transfer to Windows laptop**:

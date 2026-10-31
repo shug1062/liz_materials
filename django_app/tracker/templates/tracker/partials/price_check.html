@@ -1,0 +1,40 @@
+{% load money %}
+<section class="panel">
+  <header>
+    <h3>Supplier prices</h3>
+    <span class="lede">{{ rows|length }} checked · {{ n_changed }} changed{% if n_failed %} · <span class="owes">{{ n_failed }} couldn't be checked</span>{% endif %}</span>
+  </header>
+  <form method="post" action="{% url 'tracker:price_apply' %}">
+    {% csrf_token %}
+    <figure>
+    <table class="price-check">
+      <thead><tr><th></th><th>Material</th><th class="num">Current</th><th class="num">Supplier now</th><th class="num">Change</th><th class="num">Student price</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr {% if not r.changed %}class="muted-row"{% endif %}>
+          <td>
+            {% if r.changed %}
+              <input type="checkbox" name="apply" value="{{ r.material.pk }}" checked aria-label="Update {{ r.material.name }}">
+              <input type="hidden" name="price_{{ r.material.pk }}" value="{{ r.quote.price }}">
+              {% if r.quote.weight_per_unit %}<input type="hidden" name="weight_{{ r.material.pk }}" value="{{ r.quote.weight_per_unit }}">{% endif %}
+            {% endif %}
+          </td>
+          <td><strong>{{ r.material.name }}</strong>
+            {% if r.quote.error %}<span class="sub-text owes">{{ r.quote.error }} <a href="{% url 'tracker:material_edit' r.material.pk %}">Edit link</a></span>
+            {% elif r.material.pricing_type != "fixed" %}<span class="sub-text">per gram{% if r.new_weight %} · {{ r.new_weight|floatformat:"-4" }}g each{% endif %}</span>{% endif %}
+          </td>
+          <td class="num">{{ r.material.base_price|gbp }}</td>
+          <td class="num">{% if r.quote.price is not None %}<strong>{{ r.quote.price|gbp }}</strong>{% else %}–{% endif %}</td>
+          <td class="num">{% if r.changed %}{% with old=r.material.base_price new=r.quote.price %}{% if new > old %}<span class="owes">▲</span>{% elif new < old %}<span class="credit">▼</span>{% else %}={% endif %}{% endwith %}{% elif r.quote.price is not None %}<span class="settled">No change</span>{% endif %}</td>
+          <td class="num">{{ r.material.final_price|gbp }}{% if r.changed and r.new_final != r.material.final_price %} → <strong>{{ r.new_final|gbp }}</strong>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </figure>
+    <div class="form-actions">
+      <span class="lede">Prices are {% if includes_vat %}including{% else %}excluding{% endif %} VAT. Past purchases keep the price they were charged.</span>
+      {% if n_changed %}<button type="submit">Update ticked prices</button>{% endif %}
+    </div>
+  </form>
+</section>

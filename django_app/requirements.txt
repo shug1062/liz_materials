@@ -1,0 +1,7 @@
+Django==5.2.18
+beautifulsoup4==4.15.0
+django-htmx==1.29.0
+requests==2.34.2
+truststore==0.10.5
+waitress==3.0.2
+whitenoise==6.12.0

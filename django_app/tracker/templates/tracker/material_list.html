@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Price list</p>
+    <h1>Materials</h1>
+    <p class="lede">Student prices include your markup.</p>
+  </div>
+  <div class="btn-row">
+    <a role="button" class="ghost" href="?inactive={% if show_inactive %}0{% else %}1{% endif %}">{% if show_inactive %}Hide{% else %}Show{% endif %} hidden</a>
+    <a role="button" class="ghost" href="{% url 'tracker:material_arrange' %}">Arrange</a>
+    {% if has_supplier_links %}<button class="ghost" hx-get="{% url 'tracker:price_check' %}" hx-target="#price-check" hx-indicator="#price-check-spinner">Check supplier prices</button>{% endif %}
+    <a role="button" href="{% url 'tracker:material_add' %}">+ Add material</a>
+  </div>
+</div>
+
+<div id="price-check-spinner" class="htmx-indicator panel spinner-panel"><span class="spinner">Checking supplier websites…</span></div>
+<div id="price-check"></div>
+
+{% regroup materials by category as by_category %}
+{% for group in by_category %}
+<section class="panel">
+  <header><h3 class="capitalise">{{ group.grouper|default:"Uncategorised" }}</h3><span class="badge">{{ group.list|length }}</span></header>
+  <figure>
+  <table class="materials-table">
+    <thead>
+      <tr><th>Material</th><th>Pricing</th><th class="num">Supplier price</th><th class="num">Cost each</th>
+          <th class="num">Markup</th><th class="num">Student price</th><th>Supplier</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for m in group.list %}
+      <tr {% if not m.is_active %}class="inactive"{% endif %}>
+        <td class="name"><strong>{{ m.name }}</strong>{% if m.pack_quantity > 1 %}<span class="sub-text">Pack of {{ m.pack_quantity|floatformat:"-3" }}</span>{% elif m.weight_per_unit %}<span class="sub-text">{{ m.weight_per_unit|floatformat:"-4" }}g each</span>{% endif %}</td>
+        <td><span class="badge {{ m.pricing_type }}">{% if m.pricing_type == "per_gram" %}Per gram{% elif m.pricing_type == "per_gram_item" %}By weight{% else %}Fixed{% endif %}</span>{% if not m.is_active %} <span class="badge inactive">Inactive</span>{% endif %}</td>
+        <td class="num">{{ m.base_price|gbp }}{% if m.pricing_type != "fixed" %}<span class="sub-text">per gram</span>{% endif %}</td>
+        <td class="num">{{ m.cost_per_item|gbp }}</td>
+        <td class="num">{{ m.markup_percentage|floatformat:"-1" }}%</td>
+        <td class="num"><strong class="credit">{{ m.final_price|gbp }}</strong><span class="sub-text">per {{ m.unit_type }}</span></td>
+        <td class="nowrap">{% if m.supplier_url %}<a href="{{ m.supplier_url }}" target="_blank" rel="noopener noreferrer">{{ m.supplier|default:"Link" }} ↗</a>{% else %}{{ m.supplier|default:"–" }}{% endif %}</td>
+        <td>
+          <div class="actions">
+            <a class="small ghost" role="button" href="{% url 'tracker:material_edit' m.pk %}">Edit</a>
+            <details class="menu">
+              <summary class="small ghost" role="button" aria-label="More actions for {{ m.name }}">…</summary>
+              <div class="menu-items">
+                {% if m.supplier_url %}<button class="small ghost" hx-get="{% url 'tracker:price_check' %}?id={{ m.pk }}" hx-target="#price-check" hx-indicator="#price-check-spinner">Check price</button>{% endif %}
+                <form method="post" action="{% url 'tracker:material_toggle' m.pk %}" class="inline">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="small ghost">{% if m.is_active %}Hide from purchases{% else %}Show in purchases{% endif %}</button></form>
+                {% if not m.n_purchases %}<form method="post" action="{% url 'tracker:material_delete' m.pk %}" class="inline" onsubmit="return confirm('Delete {{ m.name|escapejs }}?');">{% csrf_token %}<button class="small danger-ghost">Delete</button></form>{% endif %}
+              </div>
+            </details>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </figure>
+</section>
+{% empty %}
+<div class="panel"><div class="body empty">No materials yet.</div></div>
+{% endfor %}
+
+{% if recent_changes %}
+<h2 class="section-title">Recent price changes</h2>
+<section class="panel">
+  <figure>
+  <table>
+    <thead><tr><th>Date</th><th>Material</th><th class="num">Was</th><th class="num">Now</th><th class="num">Change</th><th>How</th></tr></thead>
+    <tbody>
+    {% for c in recent_changes %}
+      <tr>
+        <td class="nowrap">{{ c.changed_at|date:"j M Y" }}</td>
+        <td>{{ c.material }}</td>
+        <td class="num">{{ c.old_price|gbp }}</td>
+        <td class="num"><strong>{{ c.new_price|gbp }}</strong></td>
+        <td class="num">{% with p=c.percent_change %}{% if p > 0 %}<span class="owes">+{{ p|floatformat:1 }}%</span>{% elif p < 0 %}<span class="credit">{{ p|floatformat:1 }}%</span>{% else %}–{% endif %}{% endwith %}</td>
+        <td><span class="badge">{% if c.source == "manual" %}Edited{% else %}Supplier{% endif %}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </figure>
+</section>
+{% endif %}
+{% endblock %}

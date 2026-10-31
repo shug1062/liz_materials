@@ -1,0 +1,9 @@
+{% load money %}
+<section class="stats spaced">
+  <div class="stat emerald"><div class="label"><span class="gem"></span>Total received</div><div class="value">{{ totals.total|gbp }}</div><div class="detail">{{ payments|length }} payment{{ payments|length|pluralize }}</div></div>
+  <div class="stat sapphire"><div class="label"><span class="gem"></span>Cash</div><div class="value">{{ totals.cash|gbp }}</div></div>
+  <div class="stat amethyst"><div class="label"><span class="gem"></span>Card</div><div class="value">{{ totals.card|gbp }}</div></div>
+</section>
+<section class="panel">
+  {% include "tracker/partials/payment_table.html" with show_student=True show_class=True %}
+</section>

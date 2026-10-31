@@ -1,0 +1,1 @@
+{% load money %}{% if b < 0 %}<span class="owes">Owes {{ b|gbp|cut:"-" }}</span>{% elif b > 0 %}<span class="credit">Credit {{ b|gbp }}</span>{% else %}<span class="settled">Settled</span>{% endif %}

@@ -1,0 +1,14 @@
+{% load money %}
+<div class="price-box">
+  <div class="breakdown">
+    {% if material.pricing_type == "per_gram_item" %}
+      {% if material.weight_per_unit %}{{ material.base_price|gbp }}/g × {{ material.weight_per_unit|floatformat:"-4" }}g = {{ material.cost_per_item|gbp }} cost per item{% else %}Enter the weight of one item to work out the price.{% endif %}
+    {% elif material.pack_quantity > 1 %}
+      {{ material.base_price|gbp }} ÷ {{ material.pack_quantity|floatformat:"-3" }} = {{ material.cost_per_item|gbp }} cost each
+    {% else %}
+      Cost {{ material.cost_per_item|gbp }} per {{ material.unit_type }}
+    {% endif %}
+    {% if material.markup_percentage %} · plus {{ material.markup_percentage|floatformat:"-2" }}% markup{% endif %}
+  </div>
+  <div class="total">{{ material.final_price|gbp }} <span class="unit">per {{ material.unit_type }} to students</span></div>
+</div>

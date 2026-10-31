@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel form-card">
+  <header><h3>{{ title }}</h3></header>
+  <form method="post">
+    <div class="body"
+         hx-get="{% url 'tracker:price_preview' %}" hx-trigger="change from:#id_material, input changed delay:300ms from:#id_quantity, load"
+         hx-target="#price-preview" hx-include="#id_material, #id_quantity" hx-swap="innerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      {% if purchase %}<p class="note">Editing keeps the original price ({{ purchase.unit_price }} per unit) unless you change the material.</p>{% endif %}
+      {{ form.non_field_errors }}
+      {{ form.student.errors }}<label>Student {{ form.student }}</label>
+      <div class="grid">
+        <div>{{ form.material.errors }}<label>Material {{ form.material }}</label></div>
+        <div>{{ form.quantity.errors }}<label>Quantity {{ form.quantity }}</label></div>
+      </div>
+      <div id="price-preview" aria-live="polite"></div>
+      <div class="grid">
+        <div>{{ form.purchase_date.errors }}<label>Date {{ form.purchase_date }}</label></div>
+        <div>{{ form.project.errors }}<label>Project <small>(optional)</small> {{ form.project }}</label></div>
+      </div>
+      {{ form.notes.errors }}<label>Notes {{ form.notes }}</label>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ next }}">Cancel</a>
+      <button type="submit">Save purchase</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
