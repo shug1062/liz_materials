@@ -1,8 +1,10 @@
 Set objShell = CreateObject("WScript.Shell")
-strPath = objShell.CurrentDirectory
+Set fso = CreateObject("Scripting.FileSystemObject")
+
+' Get the directory where this script is located
+strPath = fso.GetParentFolderName(WScript.ScriptFullName)
 
 ' Check if venv exists
-Set fso = CreateObject("Scripting.FileSystemObject")
 venvPath = strPath & "\.venv\Scripts\python.exe"
 
 If Not fso.FileExists(venvPath) Then
