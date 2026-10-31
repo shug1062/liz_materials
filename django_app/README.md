@@ -9,6 +9,7 @@ These steps assume Python 3.10 or newer is already installed.
 1. Copy or sync the whole `django_app` folder to the Windows laptop.
 2. If you have data from the old app, put `jewelry_business.db` in `django_app\data\`.
 3. Double-click `start_windows.bat`.
+4. Optional: double-click `create_shortcut.vbs` once. It puts a **Silver Bird Studio** shortcut on the Desktop. Right-click it and choose **Pin to taskbar** (on Windows 11, choose **Show more options** first). Clicking it starts the app in a minimised window and opens the page. If the app is already running, it just opens the page.
 
 On first run the script:
 
@@ -18,7 +19,7 @@ On first run the script:
 - sets up the database and imports the old data, if found
 - makes a backup and starts the app
 
-Then open <http://localhost:8000>. On the iPad, use `http://<laptop-name>:8000`; the window shows the name. Keep the window open while you use the app, and close it to stop the app.
+The browser opens <http://localhost:8000> once the app is ready. On the iPad, use `http://<laptop-name>:8000`; the window shows the name. Keep the window open while you use the app, and close it to stop the app.
 
 Later runs skip package installation and start faster.
 

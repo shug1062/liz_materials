@@ -1,9 +1,25 @@
 import ctypes
+import socket
 import subprocess
 import sys
+import time
+import webbrowser
 
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
+PORT = 8000
+
+
+def open_browser_when_ready(server: subprocess.Popen) -> None:
+    for _ in range(60):
+        if server.poll() is not None:
+            return
+        with socket.socket() as s:
+            s.settimeout(0.5)
+            if s.connect_ex(("127.0.0.1", PORT)) == 0:
+                webbrowser.open(f"http://localhost:{PORT}/")
+                return
+        time.sleep(0.5)
 
 
 def main() -> int:
@@ -19,10 +35,12 @@ def main() -> int:
         raise ctypes.WinError(ctypes.get_last_error())
 
     try:
-        return subprocess.call([
-            sys.executable, "-m", "waitress", "--listen=0.0.0.0:8000", "--threads=8",
+        server = subprocess.Popen([
+            sys.executable, "-m", "waitress", f"--listen=0.0.0.0:{PORT}", "--threads=8",
             "studio.wsgi:application",
         ])
+        open_browser_when_ready(server)
+        return server.wait()
     except KeyboardInterrupt:
         return 0
     finally:

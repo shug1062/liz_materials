@@ -3,6 +3,9 @@ rem Starts the studio tracker on this laptop so the iPad can use it on the same 
 cd /d "%~dp0"
 set "STUDIO_HOSTNAME=%COMPUTERNAME%"
 
+rem Already running (e.g. the taskbar button clicked twice): just open the page.
+curl -s -o nul --max-time 2 http://localhost:8000/ 2>nul && (start "" http://localhost:8000/ & goto :eof)
+
 if not exist ".venv\Scripts\python.exe" (
     py -3 -m venv .venv || goto :error
     .venv\Scripts\python -m pip install -r requirements.txt || goto :error
