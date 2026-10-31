@@ -7,13 +7,18 @@ from django.db.models import Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import HttpResponse
 
-from .models import ZERO, Material, Payment, Purchase, Student, StudioClass, money
+from .models import ZERO, Material, Payment, Purchase, Sale, Student, StudioClass, money
 
 
 def tax_year(day: date) -> tuple[date, date]:
     """UK tax year containing `day` (6 April to 5 April)."""
     start_year = day.year if day >= date(day.year, 4, 6) else day.year - 1
     return date(start_year, 4, 6), date(start_year + 1, 4, 5)
+
+
+def tax_year_label(day: date) -> str:
+    start, end = tax_year(day)
+    return f"{start.year}/{str(end.year)[2:]}"
 
 
 def presets(today: date) -> list[tuple[str, date | None, date | None]]:
@@ -36,18 +41,35 @@ def filtered(start, end):
     return payments, purchases
 
 
-def monthly(payments, purchases) -> list[dict]:
+def filtered_sales(start, end):
+    sales = Sale.objects.select_related("student")
+    if start:
+        sales = sales.filter(sale_date__gte=start)
+    if end:
+        sales = sales.filter(sale_date__lte=end)
+    return sales
+
+
+def monthly(payments, purchases, sales=None) -> list[dict]:
     months = {}
-    money_keys = ("cash", "card", "other", "income", "sales", "cost", "lessons", "orders")
+    money_keys = ("cash", "card", "other", "income", "sales", "cost", "lessons", "orders", "other_sales")
 
     def row(month):
         return months.setdefault(month, {"month": month, **{key: ZERO for key in money_keys}})
 
+    def receive(target, method, amount):
+        key = {Payment.Method.CASH: "cash", Payment.Method.CARD: "card"}.get(method, "other")
+        target[key] += amount
+        target["income"] += amount
+
     for r in payments.annotate(month=TruncMonth("payment_date")).values("month", "payment_method").annotate(total=Sum("amount")):
-        target = row(r["month"])
-        key = {Payment.Method.CASH: "cash", Payment.Method.CARD: "card"}.get(r["payment_method"], "other")
-        target[key] += r["total"]
-        target["income"] += r["total"]
+        receive(row(r["month"]), r["payment_method"], r["total"])
+    if sales is not None:
+        for r in (sales.annotate(month=TruncMonth("sale_date")).values("month", "payment_method")
+                  .annotate(total=Sum("amount")).order_by()):
+            target = row(r["month"])
+            receive(target, r["payment_method"], r["total"])
+            target["other_sales"] += r["total"]
     for r in purchases.annotate(month=TruncMonth("purchase_date")).values("month", "material__kind").annotate(
             sales=Sum("total_cost"), cost=Sum("cost_total")):
         target = row(r["month"])
@@ -172,19 +194,28 @@ def csv_response(filename: str, header: list[str], rows) -> HttpResponse:
 def monthly_csv_rows(rows):
     for m in rows:
         yield [m["month"].strftime("%Y-%m"), m["cash"], m["card"], m["other"], m["income"], m["sales"], m["cost"],
-               m["profit"], m["lessons"], m["orders"]]
+               m["profit"], m["lessons"], m["orders"], m["other_sales"]]
 
 
 MONTHLY_HEADER = ["Month", "Cash received", "Card received", "Other received", "Total received",
-                  "Materials sold", "Materials cost", "Materials profit", "Lesson fees", "Orders at cost"]
+                  "Materials sold", "Materials cost", "Materials profit", "Lesson fees", "Orders at cost",
+                  "Other sales (jewellery, courses etc.)"]
 
-PAYMENTS_HEADER = ["Date", "Name", "Type", "Class", "Method", "Amount", "Notes"]
+PAYMENTS_HEADER = ["Date", "Name", "Type", "Class / where", "Method", "Amount", "Notes"]
 
 
-def payments_csv_rows(payments):
-    for p in payments.order_by("payment_date", "id"):
-        yield [p.payment_date.isoformat(), p.student.name, "Sales channel" if p.student.is_sales_channel else "Student",
-               p.student.class_name, p.payment_method, p.amount, p.notes]
+def payments_csv_rows(payments, sales=None):
+    """Every payment, plus (when given) every one-off sale – together that's all money received."""
+    rows = [(p.payment_date, 0, p.id, [p.payment_date.isoformat(), p.student.name,
+                                       "Sales channel" if p.student.is_sales_channel else "Student",
+                                       p.student.class_name, p.payment_method, p.amount, p.notes])
+            for p in payments]
+    for s in sales if sales is not None else ():
+        rows.append((s.sale_date, 1, s.id, [s.sale_date.isoformat(), s.student.name if s.student else "",
+                                            f"Sale – {s.get_sale_type_display()}", s.where, s.payment_method,
+                                            s.amount, s.description]))
+    for *_, row in sorted(rows, key=lambda r: r[:3]):
+        yield row
 
 
 SALES_HEADER = ["Date", "Student", "Class", "Type", "Material", "Category", "Quantity", "Unit", "Price each",

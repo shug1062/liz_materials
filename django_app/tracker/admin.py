@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.db.models.deletion import ProtectedError
 
-from .models import Category, Material, Payment, Project, Purchase, Student, StudioClass
+from .models import Category, Material, Payment, Project, Purchase, Sale, Student, StudioClass
 
 
 class PurchaseInline(admin.TabularInline):
@@ -98,4 +98,14 @@ class PaymentAdmin(admin.ModelAdmin):
     search_fields = ("student__name", "notes")
     autocomplete_fields = ("student",)
     date_hierarchy = "payment_date"
+    list_select_related = ("student",)
+
+
+@admin.register(Sale)
+class SaleAdmin(admin.ModelAdmin):
+    list_display = ("sale_date", "sale_type", "description", "amount", "payment_method", "student", "where")
+    list_filter = ("sale_type", "payment_method", "sale_date")
+    search_fields = ("description", "where", "student__name")
+    autocomplete_fields = ("student",)
+    date_hierarchy = "sale_date"
     list_select_related = ("student",)

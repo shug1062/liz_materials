@@ -7,7 +7,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.management import call_command
 from django.db import transaction
-from django.db.models import Count, F, ProtectedError, Q, Sum
+from django.db.models import Count, F, Max, ProtectedError, Q, Sum
 from django.forms.models import model_to_dict
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -20,12 +20,12 @@ from . import contacts_import, margins, silver, statements, suppliers, undo
 from . import reports as reports_lib
 from .forms import (
     BackupSettingsForm, DateRangeForm, MaterialForm, PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm,
-    SilverPriceForm, StudentForm,
-    StudioClassForm, TermDatesForm, CourseFeeForm,
+    SaleFilterForm, SaleForm, SilverPriceForm, StudentForm,
+    StudioClassForm, TermDatesForm, CourseFeeForm, NextTermForm,
 )
 from .models import (
-    ZERO, Category, Material, Payment, PriceChange, Project, Purchase, SilverPrice, Student, StudioClass, StudioSettings,
-    money,
+    ZERO, Category, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass,
+    StudioSettings, money,
 )
 
 NO_CLASS = "No class assigned"
@@ -44,8 +44,12 @@ def _next_url(request, default):
     return default
 
 
-def _method_totals(payments):
-    totals = {m["payment_method"]: m["total"] for m in payments.values("payment_method").annotate(total=Sum("amount"))}
+def _method_totals(*querysets):
+    """Money received by method, across payments and/or sales (both have amount + payment_method)."""
+    totals = {}
+    for qs in querysets:
+        for m in qs.values("payment_method").annotate(total=Sum("amount")).order_by():
+            totals[m["payment_method"]] = totals.get(m["payment_method"], ZERO) + m["total"]
     return {
         "cash": totals.get(Payment.Method.CASH, ZERO),
         "card": totals.get(Payment.Method.CARD, ZERO),
@@ -79,9 +83,9 @@ def dashboard(request):
         "class_credit": sum((b for b in balances if b > 0), ZERO),
         "channel_totals": channel_totals,
         "sales_totals": _method_totals(Payment.objects.filter(student__is_sales_channel=True)),
+        "other_sales": _method_totals(Sale.objects.filter(sale_date__gte=reports_lib.tax_year(timezone.localdate())[0])),
+        "tax_year": reports_lib.tax_year_label(timezone.localdate()),
         "classes": classes,
-        "recent_purchases": Purchase.objects.select_related("student", "material", "project")[:10],
-        "recent_payments": Payment.objects.select_related("student")[:10],
     })
 
 
@@ -184,12 +188,13 @@ def student_merge(request, pk):
     chosen = next((v for v in (request.POST or request.GET).getlist("into") if v.isdigit()), None)
     into = others.filter(pk=chosen).first() if chosen else None
     if request.method == "POST" and into:
-        purchases, payments = list(student.purchases.all()), list(student.payments.all())
+        purchases, payments, sales = list(student.purchases.all()), list(student.payments.all()), list(student.sales.all())
         with transaction.atomic():
             undo.remember(request, f"Merged {student} ({student.class_name or 'no class'}) into {into}.",
-                          restore=[Student.objects.get(pk=into.pk), student, *purchases, *payments])
+                          restore=[Student.objects.get(pk=into.pk), student, *purchases, *payments, *sales])
             student.purchases.update(student=into)
             student.payments.update(student=into)
+            student.sales.update(student=into)
             into.email = into.email or student.email
             into.phone = into.phone or student.phone
             if student.notes:
@@ -284,6 +289,7 @@ def student_detail(request, pk):
         "student": student,
         "purchases": student.purchases.select_related("material", "project"),
         "payments": student.payments.all(),
+        "sales": student.sales.all(),
         "statement": statements.statement_for(student),
     })
 
@@ -421,6 +427,89 @@ def payment_delete(request, pk):
     if request.htmx:
         return HttpResponse(headers={"HX-Refresh": "true"})
     return redirect(_next_url(request, student.get_absolute_url()))
+
+
+# ---------- One-off sales (paid on the spot, outside students' tabs) ----------
+
+def sale_list(request):
+    params = request.GET.copy()
+    tax_start, tax_end = reports_lib.tax_year(timezone.localdate())
+    if not params:
+        params.update({"start": tax_start.isoformat(), "end": tax_end.isoformat()})
+    form = SaleFilterForm(params)
+    sales = Sale.objects.select_related("student")
+    if form.is_valid():
+        data = form.cleaned_data
+        if data["sale_type"]:
+            sales = sales.filter(sale_type=data["sale_type"])
+        if data["start"]:
+            sales = sales.filter(sale_date__gte=data["start"])
+        if data["end"]:
+            sales = sales.filter(sale_date__lte=data["end"])
+    by_type = dict(sales.values_list("sale_type").annotate(Sum("amount")).order_by())
+    return render(request, "tracker/sale_list.html", {
+        "form": form,
+        "sales": sales,
+        "totals": _method_totals(sales),
+        "by_type": [(label, by_type[value]) for value, label in Sale.Type.choices if value in by_type],
+        "tax_year": reports_lib.tax_year_label(timezone.localdate()),
+    })
+
+
+def sale_form(request, pk=None):
+    sale = get_object_or_404(Sale, pk=pk) if pk else None
+    class_name = None if sale else request.GET.get("class_name")
+    in_class = class_name is not None
+    students = Student.objects.active().filter(is_sales_channel=False)
+    if in_class:
+        students = students.filter(class_name=class_name)
+        default_next = _class_url(class_name)
+    else:
+        students = Student.objects.filter(Q(is_archived=False) | Q(pk=getattr(sale, "student_id", None)))
+        default_next = reverse("tracker:sale_list")
+    initial = {}
+    if not sale:
+        initial = {key: request.GET[key] for key in ("student", "where", "sale_date", "payment_method", "sale_type")
+                   if request.GET.get(key)}
+        if in_class and "where" not in initial:
+            initial["where"] = class_name
+    form = SaleForm(request.POST or None, instance=sale, initial=initial, students=students)
+    next_url = _next_url(request, default_next)
+    if request.method == "POST" and form.is_valid():
+        saved = form.save()
+        who = f" to {saved.student}" if saved.student else ""
+        label = f"Sale of £{saved.amount} ({saved.get_sale_type_display().lower()}){who}"
+        if sale:
+            messages.success(request, f"{label} updated.")
+        else:
+            undo.remember(request, f"{label} by {saved.payment_method.lower()}.", created=[saved])
+        if "another" in request.POST:
+            again = {"where": saved.where, "sale_date": saved.sale_date.isoformat(),
+                     "payment_method": saved.payment_method, "sale_type": saved.sale_type, "next": next_url}
+            if in_class:
+                again["class_name"] = class_name
+            return redirect(f"{reverse('tracker:sale_new')}?{urlencode(again)}")
+        return redirect(next_url)
+    places = StudioClass.ordered_class_names(include_finished=False) + list(
+        Sale.objects.exclude(where="").values_list("where", flat=True).distinct().order_by("where"))
+    return render(request, "tracker/sale_form.html", {
+        "form": form,
+        "sale": sale,
+        "title": "Edit sale" if sale else "Record a sale",
+        "next": next_url,
+        "in_class": in_class,
+        "class_name": class_name,
+        "class_label": (class_name or NO_CLASS) if in_class else "",
+        "places": list(dict.fromkeys(places)),
+    })
+
+
+@require_POST
+def sale_delete(request, pk):
+    sale = get_object_or_404(Sale, pk=pk)
+    undo.remember(request, f"Deleted sale of £{sale.amount} ({sale.get_sale_type_display().lower()}).", restore=[sale])
+    sale.delete()
+    return redirect(_next_url(request, reverse("tracker:sale_list")))
 
 
 @require_POST
@@ -572,7 +661,7 @@ def payments_report(request):
         if data["end"]:
             payments = payments.filter(payment_date__lte=data["end"])
     context = {"form": form, "payments": payments, "totals": _method_totals(payments),
-               "tax_year": f"{tax_start.year}/{str(tax_end.year)[2:]}"}
+               "tax_year": reports_lib.tax_year_label(timezone.localdate())}
     template = "tracker/partials/payments_table.html" if request.htmx else "tracker/payments_report.html"
     return render(request, template, context)
 
@@ -602,7 +691,9 @@ def reports(request):
     total = purchases.aggregate(**sums)
     other_sales = dict(all_purchases.exclude(material__kind=Material.Kind.MATERIAL)
                        .values_list("material__kind").annotate(Sum("total_cost")))
-    income = _method_totals(payments)
+    one_off_sales = reports_lib.filtered_sales(start, end)
+    income = _method_totals(payments, one_off_sales)
+    by_sale_type = dict(one_off_sales.values_list("sale_type").annotate(Sum("amount")).order_by())
     silver_only = request.GET.get("by_class") == "silver"
     class_purchases = purchases.filter(material__is_silver=True) if silver_only else purchases
     by_class = sorted(
@@ -635,7 +726,9 @@ def reports(request):
         "total": _profit_row("Total", total["sales"], total["cost"]),
         "lesson_fees": other_sales.get(Material.Kind.LESSON) or ZERO,
         "orders_at_cost": other_sales.get(Material.Kind.ORDER) or ZERO,
-        "by_month": reports_lib.monthly(payments, all_purchases),
+        "one_off_total": sum(by_sale_type.values(), ZERO),
+        "one_off_by_type": [(label, by_sale_type[value]) for value, label in Sale.Type.choices if value in by_sale_type],
+        "by_month": reports_lib.monthly(payments, all_purchases, one_off_sales),
         "by_class": by_class,
         "scope_links": scope_links,
         "silver_only": silver_only,
@@ -652,20 +745,23 @@ def reports(request):
 def reports_csv(request, kind):
     _, start, end = _report_range(request)
     payments, purchases = reports_lib.filtered(start, end)
+    sales = reports_lib.filtered_sales(start, end)
     period = f"{start or 'start'}-to-{end or timezone.localdate()}"
     if kind == "payments":
         return reports_lib.csv_response(f"silverbird-payments-{period}.csv", reports_lib.PAYMENTS_HEADER,
-                                        reports_lib.payments_csv_rows(payments))
+                                        reports_lib.payments_csv_rows(payments, sales))
     if kind == "sales":
         return reports_lib.csv_response(f"silverbird-materials-sold-{period}.csv", reports_lib.SALES_HEADER,
                                         reports_lib.sales_csv_rows(purchases))
-    rows = reports_lib.monthly(payments, purchases)
+    rows = reports_lib.monthly(payments, purchases, sales)
     return reports_lib.csv_response(f"silverbird-monthly-{period}.csv", reports_lib.MONTHLY_HEADER,
                                     reports_lib.monthly_csv_rows(rows))
 
 
 def material_list(request):
-    materials = Material.objects.select_related("category").annotate(n_purchases=Count("purchases"))
+    # Meta.ordering is ignored on aggregate queries, so order explicitly for {% regroup %}.
+    materials = (Material.objects.select_related("category").annotate(n_purchases=Count("purchases"))
+                 .order_by(F("category__sort_order").asc(nulls_last=True), "category__name", "sort_order", "name"))
     show_inactive = request.GET.get("inactive") == "1"
     if not show_inactive:
         materials = materials.filter(is_active=True)
@@ -811,30 +907,48 @@ def material_delete(request, pk):
     return redirect("tracker:material_list")
 
 
+PRICE_CHECK_BATCH = 20
+
+
+@require_POST
 def price_check(request):
-    """HTMX partial: fetch supplier prices and show old → new for confirmation (nothing is saved yet)."""
+    """HTMX partial: supplier prices, old → new, for Liz to confirm; checked in batches, longest-unchecked first.
+
+    Saved straight away: links the supplier has moved, and today's date on prices that turned out unchanged.
+    """
     materials = Material.objects.exclude(supplier_url="").select_related("category")
-    if request.GET.get("id"):
-        materials = materials.filter(pk=request.GET["id"])
+    if request.POST.get("id"):
+        materials, remaining = list(materials.filter(pk=request.POST["id"])), 0
     else:
-        materials = materials.filter(is_active=True)
-    materials = list(materials)
+        materials = [m for m in materials.filter(is_active=True).order_by("price_date", "name")
+                     if suppliers.supplier_for(m.supplier_url)]
+        materials, remaining = materials[:PRICE_CHECK_BATCH], max(len(materials) - PRICE_CHECK_BATCH, 0)
     quotes = suppliers.fetch_quotes(materials)
-    rows = []
+    rows, confirmed = [], []
     for m in materials:
         q = quotes[m.pk]
+        if q.final_url and q.final_url != m.supplier_url:
+            Material.objects.filter(pk=m.pk).update(supplier_url=q.final_url)
         new_weight = q.weight_per_unit if q.weight_per_unit is not None else m.weight_per_unit
         changed = q.price is not None and (q.price != m.base_price or new_weight != m.weight_per_unit)
+        if q.price is not None and not changed:
+            confirmed.append(m)
         new_final = None
         if q.price is not None:
             preview = Material(pricing_type=m.pricing_type, base_price=q.price, pack_quantity=m.pack_quantity,
                                weight_per_unit=new_weight, markup_percentage=m.markup_percentage)
             new_final = preview.final_price
         rows.append({"material": m, "quote": q, "new_weight": new_weight, "changed": changed, "new_final": new_final})
+    if confirmed:
+        Material.objects.filter(pk__in=[m.pk for m in confirmed]).update(price_date=timezone.localdate())
+        silver.recost([m for m in confirmed if m.is_silver])
     return render(request, "tracker/partials/price_check.html", {
         "rows": rows,
         "n_changed": sum(r["changed"] for r in rows),
         "n_failed": sum(bool(r["quote"].error) for r in rows),
+        "rate_limited": any(r["quote"].rate_limited for r in rows),
+        "remaining": remaining,
+        "batch": PRICE_CHECK_BATCH,
         "includes_vat": settings.SUPPLIER_PRICES_INCLUDE_VAT,
     })
 
@@ -1042,12 +1156,59 @@ def class_form(request, pk=None):
     })
 
 
+def _with_carried_debt(students, class_name):
+    """Attach .carried: what each student still owes from other classes or earlier terms."""
+    students = list(statements.with_history(students))
+    for s in students:
+        s.carried = statements.statement_for(s).owed_from_other_classes(class_name)
+    return students
+
+
 def class_detail(request, pk):
     studio_class = get_object_or_404(StudioClass, pk=pk)
     return render(request, "tracker/class_detail.html", {
         "studio_class": studio_class,
-        "students": Student.objects.with_balances().active().filter(class_name=studio_class.name),
+        "students": _with_carried_debt(
+            Student.objects.with_balances().active().filter(class_name=studio_class.name), studio_class.name),
         "candidates": _add_candidates(studio_class, ""),
+    })
+
+
+def class_next_term(request, pk):
+    """Copy a class for next term and move the chosen students across; their balances carry on with them."""
+    studio_class = get_object_or_404(StudioClass, pk=pk)
+    students = _with_carried_debt(
+        Student.objects.with_balances().active().filter(class_name=studio_class.name).order_by("name"), "")
+    form = NextTermForm(request.POST or None, studio_class=studio_class)
+    chosen = {int(pk) for pk in request.POST.getlist("student") if pk.isdigit()}
+    if request.method == "POST" and form.is_valid():
+        data, old = form.cleaned_data, StudioClass.objects.get(pk=studio_class.pk)
+        moving = [s for s in students if s.pk in chosen]
+        staying = [s for s in students if s.pk not in chosen]
+        keep_name = data["new_name"] == studio_class.name
+        history_name = data["old_name"] if keep_name else studio_class.name
+        with transaction.atomic():
+            renamed_purchases = list(Purchase.objects.filter(class_name=studio_class.name)) if keep_name else []
+            originals = [old, *[Student.objects.get(pk=s.pk) for s in students], *renamed_purchases]
+            studio_class.name, studio_class.end_date = history_name, data["old_end_date"] or studio_class.end_date
+            studio_class.sort_order = (StudioClass.objects.aggregate(m=Max("sort_order"))["m"] or 0) + 1
+            studio_class.save()
+            if keep_name:
+                Purchase.objects.filter(pk__in=[p.pk for p in renamed_purchases]).update(class_name=history_name)
+                Student.objects.filter(pk__in=[s.pk for s in staying]).update(class_name=history_name)
+            new_class = StudioClass.objects.create(
+                name=data["new_name"], start_date=data["start_date"], end_date=data["end_date"],
+                notes=old.notes, sort_order=old.sort_order,
+            )
+            Student.objects.filter(pk__in=[s.pk for s in moving]).update(class_name=new_class.name)
+            undo.remember(request, f"Started {new_class.name} for next term with {len(moving)} students.",
+                          created=[new_class], restore=originals)
+        return redirect(new_class)
+    return render(request, "tracker/class_next_term.html", {
+        "studio_class": studio_class,
+        "students": students,
+        "form": form,
+        "chosen": chosen if request.method == "POST" else {s.pk for s in students},
     })
 
 

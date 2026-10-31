@@ -14,6 +14,7 @@
     <p class="eyebrow">Tap a name to add materials</p>
     <h1>{{ class_label }}</h1>
   </div>
+  <a role="button" class="ghost" href="{% url 'tracker:sale_new' %}?class_name={{ class_name|urlencode }}">Record a sale</a>
 </div>
 <div class="tile-grid">
   {% for s in students %}

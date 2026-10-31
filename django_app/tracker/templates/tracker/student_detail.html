@@ -18,6 +18,7 @@
   <div class="btn-row">
     <a role="button" href="{% url 'tracker:purchase_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record purchase</a>
     <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record payment</a>
+    <a role="button" class="ghost" href="{% url 'tracker:sale_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record a sale</a>
     <a role="button" class="ghost" href="{% url 'tracker:student_statement' student.pk %}">Statement</a>
     {% if statement.owed and statement.mailto %}<a role="button" class="ghost" href="{{ statement.mailto }}">Email balance</a>{% endif %}
   </div>
@@ -32,6 +33,7 @@
     <div class="label"><span class="gem"></span>Balance</div>
     <div class="value">{% if student.balance < 0 %}{{ student.balance|gbp|cut:"-" }}{% else %}{{ student.balance|gbp }}{% endif %}</div>
     <div class="detail">{% if student.balance < 0 %}Owed to the studio{% elif student.balance > 0 %}In credit{% else %}All settled{% endif %}</div>
+    {% if statement.owed_by_class|length > 1 %}<div class="detail">{% for name, amount in statement.owed_by_class.items %}{{ amount|gbp }} from {{ name|default:"no class" }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
   </div>
 </section>
 
@@ -40,6 +42,12 @@
 
 <h2 class="section-title">Payments</h2>
 <section class="panel">{% include "tracker/partials/payment_table.html" %}</section>
+
+{% if sales %}
+<h2 class="section-title">Paid-on-the-spot sales</h2>
+<p class="sub-text">Not part of {{ student.name }}’s account – these were paid for there and then.</p>
+<section class="panel">{% include "tracker/partials/sale_table.html" %}</section>
+{% endif %}
 
 <div class="btn-row footer-actions">
   <a role="button" class="small ghost" href="{% url 'tracker:student_edit' student.pk %}">Edit details</a>

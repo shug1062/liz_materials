@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb" href="{{ studio_class.get_absolute_url }}">← {{ studio_class.name }}</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">New term</p>
+    <h1>Copy {{ studio_class.name }} for next term</h1>
+    <p class="lede">Ticked students move to next term’s class. Their purchases and payments stay on their account, so anything they still owe carries over with them.</p>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel">
+    <div class="body">
+      <div class="grid">
+        <div>{{ form.new_name.errors }}<label>{{ form.new_name.label }} {{ form.new_name }}</label></div>
+        <div>{{ form.old_name.errors }}<label>{{ form.old_name.label }} {{ form.old_name }}</label>
+          <span class="helptext">Only used if next term keeps the same name, so this term’s history stays under its own name in Reports.</span></div>
+      </div>
+      <div class="grid">
+        <div>{{ form.start_date.errors }}<label>{{ form.start_date.label }} {{ form.start_date }}</label></div>
+        <div>{{ form.end_date.errors }}<label>{{ form.end_date.label }} {{ form.end_date }}</label></div>
+        <div>{{ form.old_end_date.errors }}<label>{{ form.old_end_date.label }} {{ form.old_end_date }}</label></div>
+      </div>
+    </div>
+    <figure>
+    <table>
+      <thead><tr><th><input type="checkbox" data-check-group="move" aria-label="Tick everyone"></th><th>Carry on next term</th><th class="num">Balance</th></tr></thead>
+      <tbody>
+      {% for s in students %}
+        <tr>
+          <td><input type="checkbox" name="student" value="{{ s.pk }}" data-group="move" id="student-{{ s.pk }}"{% if s.pk in chosen %} checked{% endif %}></td>
+          <td><label for="student-{{ s.pk }}">{{ s.name }}</label></td>
+          <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}
+            {% if s.balance < 0 %}{% for name, amount in s.carried %}<span class="sub-text">{{ amount|gbp }} from {{ name }}</span>{% endfor %}{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3" class="empty">No students in this class.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </figure>
+    <div class="body">
+      <p class="helptext">Untick anyone who isn’t coming back – they stay with this term’s class (and can be archived once it has finished). You can charge next term’s fee from the new class page.</p>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ studio_class.get_absolute_url }}">Cancel</a>
+      <button type="submit">Create next term’s class</button>
+    </div>
+  </section>
+</form>
+{% endblock %}

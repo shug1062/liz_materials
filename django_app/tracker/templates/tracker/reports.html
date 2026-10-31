@@ -36,6 +36,8 @@
   <div class="stat {% if total.profit < 0 %}ruby{% else %}amethyst{% endif %}"><div class="label"><span class="gem"></span>Profit on materials</div><div class="value">{{ total.profit|gbp }}</div><div class="detail">{% if total.margin is not None %}{{ total.margin|floatformat:0 }}% of sales{% else %}–{% endif %}</div></div>
   <div class="stat neutral"><div class="label"><span class="gem"></span>Lesson &amp; course fees</div><div class="value">{{ lesson_fees|gbp }}</div>
     <div class="detail">Orders at cost {{ orders_at_cost|gbp }} (passed straight through, no profit)</div></div>
+  <div class="stat steel"><div class="label"><span class="gem"></span><a href="{% url 'tracker:sale_list' %}{% if query %}?{{ query }}{% endif %}">Other sales</a></div><div class="value">{{ one_off_total|gbp }}</div>
+    <div class="detail">{% for label, amount in one_off_by_type %}{{ label }} {{ amount|gbp }}{% if not forloop.last %} · {% endif %}{% empty %}Jewellery, courses etc. paid on the spot{% endfor %}</div></div>
 </section>
 
 <section class="panel">
@@ -44,8 +46,8 @@
     <p class="sub-text">Spreadsheet (CSV) files open in Excel or Numbers and cover the period shown above.</p>
     <div class="btn-row">
       <a role="button" class="small" href="{% url 'tracker:reports_csv' 'monthly' %}{% if query %}?{{ query }}{% endif %}" download>Monthly summary</a>
-      <a role="button" class="small ghost" href="{% url 'tracker:reports_csv' 'payments' %}{% if query %}?{{ query }}{% endif %}" download>Every payment</a>
-      <a role="button" class="small ghost" href="{% url 'tracker:reports_csv' 'sales' %}{% if query %}?{{ query }}{% endif %}" download>Every sale (materials, lessons, orders)</a>
+      <a role="button" class="small ghost" href="{% url 'tracker:reports_csv' 'payments' %}{% if query %}?{{ query }}{% endif %}" download>Every payment &amp; sale</a>
+      <a role="button" class="small ghost" href="{% url 'tracker:reports_csv' 'sales' %}{% if query %}?{{ query }}{% endif %}" download>Every student purchase (materials, lessons, orders)</a>
     </div>
   </div>
 </section>
@@ -65,7 +67,7 @@
     <thead>
       <tr><th>Month</th><th class="num">Cash</th><th class="num">Card</th><th class="num">Other</th><th class="num">Received</th>
           <th class="num">Materials sold</th><th class="num">Cost</th><th class="num">Profit</th>
-          <th class="num">Lesson fees</th><th class="num">Orders at cost</th></tr>
+          <th class="num">Lesson fees</th><th class="num">Orders at cost</th><th class="num">Other sales</th></tr>
     </thead>
     <tbody>
     {% for m in by_month %}
@@ -80,16 +82,17 @@
         <td class="num"><strong class="{% if m.profit < 0 %}owes{% else %}credit{% endif %}">{{ m.profit|gbp }}</strong></td>
         <td class="num">{% if m.lessons %}{{ m.lessons|gbp }}{% else %}–{% endif %}</td>
         <td class="num">{% if m.orders %}{{ m.orders|gbp }}{% else %}–{% endif %}</td>
+        <td class="num">{% if m.other_sales %}{{ m.other_sales|gbp }}{% else %}–{% endif %}</td>
       </tr>
     {% empty %}
-      <tr><td colspan="10" class="empty">Nothing recorded in this period.</td></tr>
+      <tr><td colspan="11" class="empty">Nothing recorded in this period.</td></tr>
     {% endfor %}
     </tbody>
     {% if by_month|length > 1 %}
     <tfoot>
       <tr><th>Total</th><th class="num">{{ income.cash|gbp }}</th><th class="num">{{ income.card|gbp }}</th><th class="num">{{ other_income|gbp }}</th>
           <th class="num">{{ income.total|gbp }}</th><th class="num">{{ total.sales|gbp }}</th><th class="num">{{ total.cost|gbp }}</th><th class="num">{{ total.profit|gbp }}</th>
-          <th class="num">{{ lesson_fees|gbp }}</th><th class="num">{{ orders_at_cost|gbp }}</th></tr>
+          <th class="num">{{ lesson_fees|gbp }}</th><th class="num">{{ orders_at_cost|gbp }}</th><th class="num">{{ one_off_total|gbp }}</th></tr>
     </tfoot>
     {% endif %}
   </table>

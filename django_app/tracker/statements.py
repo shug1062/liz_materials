@@ -15,6 +15,11 @@ class Statement:
     owed: Decimal = ZERO
     credit: Decimal = ZERO
     items: list = field(default_factory=list)  # [{"name", "quantity", "unit"}] for purchases not yet paid for
+    owed_by_class: dict = field(default_factory=dict)  # class name at the time of purchase -> unpaid amount
+
+    def owed_from_other_classes(self, class_name) -> list[tuple[str, Decimal]]:
+        """Debt carried over from earlier classes or terms, e.g. [("Thurs 11am – Autumn 2026", £12.50)]."""
+        return [(name or "no class", amount) for name, amount in self.owed_by_class.items() if name != class_name]
 
     @property
     def first_name(self) -> str:
@@ -86,7 +91,9 @@ def statement_for(student) -> Statement:
         if remaining >= purchase.total_cost:
             remaining -= purchase.total_cost
             continue
+        unpaid = purchase.total_cost - remaining
         remaining = ZERO
+        statement.owed_by_class[purchase.class_name] = statement.owed_by_class.get(purchase.class_name, ZERO) + unpaid
         material = purchase.material
         # Each course fee is its own line ("Course fee – Autumn term"), not lumped together.
         detail = purchase.notes.strip() if material.kind == "lesson" else ""

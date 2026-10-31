@@ -19,7 +19,7 @@ from django.utils import timezone
 from . import margins, reports, silver, statements, suppliers
 from .forms import MaterialForm
 from .models import (
-    Category, Material, Payment, PriceChange, Project, Purchase, SilverPrice, Student, StudioClass, StudioSettings,
+    Category, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass, StudioSettings,
     estimated_unit_cost,
 )
 
@@ -367,18 +367,27 @@ class WindowsKeepAwakeTests(TestCase):
 
 @override_settings(SUPPLIER_PRICES_INCLUDE_VAT=True)
 class SupplierParsingTests(TestCase):
-    def test_cooksongold_fixed_price_adds_vat(self):
-        html = '<meta itemprop="price" content="16.280"><meta itemprop="priceCurrency" content="GBP">'
+    def test_cooksongold_price_is_already_inc_vat(self):
+        html = "<script>const vatopt='inc';</script><meta itemprop=\"price\" content=\"16.280\">"
+        self.assertEqual(suppliers.parse_cooksongold_price(html, "fixed"), Decimal("16.2800"))
+
+    def test_cooksongold_ex_vat_page_gets_vat_added(self):
+        html = "<script>const vatopt='exc';</script><meta itemprop=\"price\" content=\"16.280\">"
         self.assertEqual(suppliers.parse_cooksongold_price(html, "fixed"), Decimal("19.5360"))
 
     def test_cooksongold_per_kg_becomes_per_gram(self):
-        html = '<meta itemprop="price" content="2097.610 per kg">'
-        self.assertEqual(suppliers.parse_cooksongold_price(html, "per_gram"), Decimal("2.5171"))
+        html = '<meta itemprop="price" content="2097.380 per kg">'
+        self.assertEqual(suppliers.parse_cooksongold_price(html, "per_gram"), Decimal("2.0974"))
 
     @override_settings(SUPPLIER_PRICES_INCLUDE_VAT=False)
     def test_ex_vat_setting(self):
-        html = '<meta itemprop="price" content="2097.610 per kg">'
-        self.assertEqual(suppliers.parse_cooksongold_price(html, "per_gram_item"), Decimal("2.0976"))
+        html = "<script>const vatopt='inc';</script><meta itemprop=\"price\" content=\"2097.600 per kg\">"
+        self.assertEqual(suppliers.parse_cooksongold_price(html, "per_gram_item"), Decimal("1.7480"))
+
+    def test_silver_price_is_taken_as_shown(self):
+        html = "<script>const vatopt='inc';</script><meta itemprop=\"price\" content=\"2097.380 per kg\">"
+        with patch("tracker.suppliers._get", return_value=Mock(text=html)):
+            self.assertEqual(suppliers.fetch_silver_price_per_kg(), Decimal("2097.38"))
 
     def test_pricing_type_mismatch_is_reported(self):
         with self.assertRaisesMessage(suppliers.SupplierError, "priced by weight"):
@@ -390,6 +399,38 @@ class SupplierParsingTests(TestCase):
 
     def test_metalclay_json_price(self):
         self.assertEqual(suppliers.parse_metalclay_price({"price": 11995}), Decimal("119.9500"))
+
+    def test_metalclay_sizes_need_the_chosen_variant(self):
+        product = {"price": 3745, "variants": [{"id": 1, "price": 3745}, {"id": 2, "price": 11995}]}
+        with self.assertRaisesMessage(suppliers.SupplierError, "several sizes"):
+            suppliers.parse_metalclay_price(product)
+        self.assertEqual(suppliers.parse_metalclay_price(product, "2"), Decimal("119.9500"))
+
+    def test_item_sold_chain_uses_the_shown_price(self):
+        html = ("<script>const vatopt='inc';</script><meta itemprop=\"price\" content=\"7.260 per g\">"
+                "<div>Best Seller <span>£7.26</span> <span>£6.05 exc. VAT</span> Weight 2.54 g</div>")
+        self.assertEqual(suppliers.parse_cooksongold_price(html, "fixed"), Decimal("7.2600"))
+        with self.settings(SUPPLIER_PRICES_INCLUDE_VAT=False):
+            self.assertEqual(suppliers.parse_cooksongold_price(html, "fixed"), Decimal("6.0500"))
+
+    def test_weight_given_for_one_piece(self):
+        html = "<p>The approximate weight for 1 piece is 0.26 grams.</p>"
+        self.assertEqual(suppliers.parse_weight_per_unit(html), Decimal("0.2600"))
+
+    def test_slow_down_is_retried_once_then_stops_the_batch(self):
+        slow = Mock(status_code=429, ok=False, history=[], text="")
+        page = Mock(status_code=200, ok=True, history=[Mock()], url="https://www.cooksongold.com/new",
+                    text='<meta itemprop="price" content="3.000">')
+        session = Mock()
+        session.get.side_effect = [slow, page, slow, slow]
+        materials = [make_material(name=n, supplier_url=f"https://www.cooksongold.com/{n}") for n in "abc"]
+        with patch("tracker.suppliers._session", return_value=session), patch("tracker.suppliers.time.sleep") as sleep:
+            quotes = suppliers.fetch_quotes(materials)
+        first, second, third = (quotes[m.pk] for m in materials)
+        self.assertEqual((first.price, first.final_url), (Decimal("3.0000"), "https://www.cooksongold.com/new"))
+        self.assertTrue(second.rate_limited and third.rate_limited)
+        self.assertEqual(session.get.call_count, 4)  # the third page is never requested
+        sleep.assert_any_call(suppliers.RATE_LIMIT_RETRY_SECONDS)
 
     def test_unsupported_and_old_links_explain_themselves(self):
         self.assertIn("only work for", suppliers.fetch_quote("https://example.com/x", "fixed").error)
@@ -436,7 +477,7 @@ class MaterialManagementTests(TestCase):
     def test_price_check_then_apply(self):
         quotes = {self.material.pk: suppliers.Quote(price=Decimal("6.0000"))}
         with patch("tracker.views.suppliers.fetch_quotes", return_value=quotes):
-            response = self.client.get(reverse("tracker:price_check"))
+            response = self.client.post(reverse("tracker:price_check"))
         self.assertEqual(response.context["n_changed"], 1)
         self.material.refresh_from_db()
         self.assertEqual(self.material.base_price, Decimal("5.0000"))  # nothing saved until confirmed
@@ -449,9 +490,37 @@ class MaterialManagementTests(TestCase):
     def test_price_check_shows_supplier_errors(self):
         quotes = {self.material.pk: suppliers.Quote(error="Product page not found")}
         with patch("tracker.views.suppliers.fetch_quotes", return_value=quotes):
-            response = self.client.get(reverse("tracker:price_check"))
+            response = self.client.post(reverse("tracker:price_check"))
         self.assertContains(response, "Product page not found")
         self.assertEqual(response.context["n_failed"], 1)
+
+    def test_price_check_confirms_unchanged_prices_and_saves_moved_links(self):
+        self.material.price_date = date(2026, 1, 1)
+        self.material.save()
+        new_url = "https://www.cooksongold.com/x-100-Recycled"
+        quotes = {self.material.pk: suppliers.Quote(price=Decimal("5.0000"), final_url=new_url)}
+        with patch("tracker.views.suppliers.fetch_quotes", return_value=quotes):
+            self.client.post(reverse("tracker:price_check"))
+        self.material.refresh_from_db()
+        self.assertEqual((self.material.price_date, self.material.supplier_url), (timezone.localdate(), new_url))
+        self.assertEqual(self.client.get(reverse("tracker:price_check")).status_code, 405)
+
+    def test_price_check_goes_in_batches_oldest_first(self):
+        for i in range(25):
+            make_material(name=f"Ring {i:02}", supplier_url=f"https://www.cooksongold.com/r{i}",
+                          price_date=date(2026, 1, 1) + timedelta(days=i))
+        make_material(name="Amazon studs", supplier_url="https://www.amazon.co.uk/dp/x", price_date=date(2025, 1, 1))
+        with patch("tracker.views.suppliers.fetch_quotes", side_effect=lambda ms: {m.pk: suppliers.Quote() for m in ms}):
+            response = self.client.post(reverse("tracker:price_check"))
+        names = [r["material"].name for r in response.context["rows"]]
+        self.assertEqual((len(names), names[0], response.context["remaining"]), (20, "Ring 00", 6))
+        self.assertNotIn("Amazon studs", names)  # unsupported sites never use up a place
+        self.assertContains(response, "Check the next 20")
+
+    def test_price_check_reports_being_slowed_down(self):
+        quotes = {self.material.pk: suppliers.Quote(error="slow down", rate_limited=True)}
+        with patch("tracker.views.suppliers.fetch_quotes", return_value=quotes):
+            self.assertContains(self.client.post(reverse("tracker:price_check")), "asked us to slow down")
 
     def test_material_with_purchases_is_not_deleted(self):
         purchase = Purchase(student=Student.objects.create(name="Amy"), material=self.material, quantity=Decimal("1"))
@@ -912,7 +981,7 @@ class ReportsTests(TestCase):
         self.assertIn("attachment;", monthly["Content-Disposition"])
         lines = monthly.content.decode("utf-8-sig").splitlines()
         self.assertEqual(lines[0].split(",")[0], "Month")
-        self.assertEqual(lines[1], "2026-04,10.00,4.00,1.00,15.00,7.20,6.00,1.20,0.00,0.00")
+        self.assertEqual(lines[1], "2026-04,10.00,4.00,1.00,15.00,7.20,6.00,1.20,0.00,0.00,0.00")
 
         payments = self.client.get(reverse("tracker:reports_csv", args=["payments"]), {"start": "2026-04-20"})
         rows = payments.content.decode("utf-8-sig").splitlines()
@@ -922,6 +991,69 @@ class ReportsTests(TestCase):
         sales = self.client.get(reverse("tracker:reports_csv", args=["sales"]))
         rows = sales.content.decode("utf-8-sig").splitlines()
         self.assertEqual(rows[1].split(",")[:5], ["2026-04-05", "Amy", "Tue", "Material", "Jump rings"])
+
+
+class SaleTests(TestCase):
+    def setUp(self):
+        self.amy = Student.objects.create(name="Amy", class_name="Tue")
+        Payment.objects.create(student=self.amy, amount=Decimal("10"), payment_method="Cash", payment_date=date(2026, 4, 2))
+
+    def test_recording_a_sale_counts_as_income_but_not_on_the_account(self):
+        response = self.client.post(reverse("tracker:sale_new"), {
+            "sale_type": "jewellery", "description": "Silver hoops", "amount": "45", "payment_method": "Card",
+            "sale_date": "2026-04-12", "student": self.amy.pk, "where": "Christmas market"})
+        self.assertRedirects(response, reverse("tracker:sale_list"))
+        sale = Sale.objects.get()
+        self.assertEqual((sale.amount, sale.student, sale.where), (Decimal("45"), self.amy, "Christmas market"))
+        self.assertEqual(Student.objects.with_balances().get(pk=self.amy.pk).balance, Decimal("10"))
+
+        context = self.client.get(reverse("tracker:reports"), {"start": "2026-04-01", "end": "2026-04-30"}).context
+        self.assertEqual((context["income"]["total"], context["income"]["card"]), (Decimal("55"), Decimal("45")))
+        self.assertEqual(context["one_off_by_type"], [("Jewellery", Decimal("45"))])
+        april = context["by_month"][0]
+        self.assertEqual((april["income"], april["other_sales"], april["sales"]), (Decimal("55"), Decimal("45"), Decimal("0")))
+
+    def test_sale_without_a_student_and_csv(self):
+        Sale.objects.create(sale_type="voucher", amount=Decimal("20"), payment_method="Cash", sale_date=date(2026, 4, 3),
+                            where="Market")
+        rows = self.client.get(reverse("tracker:reports_csv", args=["payments"])).content.decode("utf-8-sig").splitlines()
+        self.assertEqual(rows[2], "2026-04-03,,Sale – Gift voucher,Market,Cash,20.00,")
+        monthly = self.client.get(reverse("tracker:reports_csv", args=["monthly"])).content.decode("utf-8-sig").splitlines()
+        self.assertTrue(monthly[1].startswith("2026-04,30.00,") and monthly[1].endswith(",20.00"))
+
+    def test_class_mode_sale_defaults_to_the_class_and_returns_there(self):
+        page = self.client.get(reverse("tracker:sale_new"), {"class_name": "Tue"})
+        self.assertEqual(page.context["form"]["where"].value(), "Tue")
+        self.assertContains(page, "Class mode · Tue")
+        self.assertEqual(list(page.context["form"].fields["student"].queryset), [self.amy])
+        response = self.client.post(f"{reverse('tracker:sale_new')}?class_name=Tue", {
+            "sale_type": "materials", "amount": "3.50", "payment_method": "Cash", "sale_date": "2026-04-12",
+            "where": "Tue", "next": reverse("tracker:class_mode") + "?class_name=Tue", "another": "1"})
+        self.assertEqual(Sale.objects.count(), 1)
+        self.assertIn("class_name=Tue", response["Location"])
+        again = self.client.get(response["Location"]).context["form"]
+        self.assertEqual((again["payment_method"].value(), again["sale_type"].value()), ("Cash", "materials"))
+
+    def test_amount_must_be_positive_and_delete_can_be_undone(self):
+        bad = self.client.post(reverse("tracker:sale_new"), {"sale_type": "other", "amount": "0", "payment_method": "Cash",
+                                                               "sale_date": "2026-04-12"})
+        self.assertEqual(bad.status_code, 200)
+        sale = Sale.objects.create(amount=Decimal("5"), sale_date=date(2026, 4, 3))
+        self.client.post(reverse("tracker:sale_delete", args=[sale.pk]))
+        self.assertFalse(Sale.objects.exists())
+        undo_id = self.client.session["undo"]["id"]
+        self.client.post(reverse("tracker:undo"), {"id": undo_id})
+        self.assertTrue(Sale.objects.filter(pk=sale.pk).exists())
+
+    def test_deleting_or_merging_a_student_keeps_their_sales(self):
+        twin = Student.objects.create(name="Amy", class_name="Wed")
+        sale = Sale.objects.create(amount=Decimal("5"), student=twin)
+        self.client.post(reverse("tracker:student_merge", args=[twin.pk]), {"into": self.amy.pk})
+        sale.refresh_from_db()
+        self.assertEqual(sale.student, self.amy)
+        self.amy.delete()
+        sale.refresh_from_db()
+        self.assertIsNone(sale.student)
 
 
 class SilverReportTests(TestCase):
@@ -1496,3 +1628,74 @@ class ClassDayTests(TestCase):
         self.assertContains(response, "Nothing recorded for this class on this day.")
         self.assertContains(response, "Print")
         self.assertContains(self.client.get(self.studio_class.get_absolute_url()), self.url)
+
+
+class NextTermTests(TestCase):
+    def setUp(self):
+        self.autumn = StudioClass.objects.create(name="Thurs 11am", start_date=date(2026, 9, 10), sort_order=0)
+        self.amy = Student.objects.create(name="Amy", class_name="Thurs 11am")
+        self.ben = Student.objects.create(name="Ben", class_name="Thurs 11am")
+        material = make_material(markup_percentage=Decimal("0"), pack_quantity=Decimal("1"))  # £5 each
+        p = Purchase(student=self.amy, material=material, quantity=Decimal("3"), purchase_date=date(2026, 10, 1))
+        p.set_price(reprice=True)
+        p.save()
+        self.purchase = p
+        Payment.objects.create(student=self.amy, amount=Decimal("10"))
+        self.url = reverse("tracker:class_next_term", args=[self.autumn.pk])
+
+    def test_same_name_next_term_keeps_history_and_debt(self):
+        form = self.client.get(self.url).context["form"]
+        self.assertEqual(form.initial["old_name"], "Thurs 11am – Autumn 2026")
+        response = self.client.post(self.url, {
+            "new_name": "Thurs 11am", "old_name": "Thurs 11am – Autumn 2026", "start_date": "2027-01-07",
+            "end_date": "2027-03-25", "old_end_date": "2026-10-30", "student": [self.amy.pk],
+        })
+        spring = StudioClass.objects.get(name="Thurs 11am")
+        self.assertRedirects(response, spring.get_absolute_url())
+        self.autumn.refresh_from_db()
+        self.amy.refresh_from_db()
+        self.ben.refresh_from_db()
+        self.purchase.refresh_from_db()
+        self.assertEqual((self.autumn.name, self.autumn.end_date, self.autumn.status),
+                         ("Thurs 11am – Autumn 2026", date(2026, 10, 30), "finished"))
+        self.assertEqual((spring.start_date, spring.sort_order), (date(2027, 1, 7), 0))
+        self.assertEqual((self.amy.class_name, self.ben.class_name), ("Thurs 11am", "Thurs 11am – Autumn 2026"))
+        self.assertEqual(self.purchase.class_name, "Thurs 11am – Autumn 2026")  # sales stay with the old term
+
+        amy = Student.objects.with_balances().get(pk=self.amy.pk)
+        self.assertEqual(amy.balance, Decimal("-5.00"))  # the debt moves with her
+        self.assertContains(self.client.get(spring.get_absolute_url()), "incl. £5.00 from Thurs 11am – Autumn 2026")
+        self.assertEqual(self.client.get(reverse("tracker:class_list")).context["n_candidates"], 1)  # Ben
+
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        self.autumn.refresh_from_db()
+        self.purchase.refresh_from_db()
+        self.ben.refresh_from_db()
+        self.assertEqual((self.autumn.name, self.purchase.class_name, self.ben.class_name),
+                         ("Thurs 11am", "Thurs 11am", "Thurs 11am"))
+        self.assertEqual(StudioClass.objects.count(), 1)
+
+    def test_new_name_leaves_this_term_alone(self):
+        self.client.post(self.url, {"new_name": "Thurs 11am Spring", "old_name": "", "old_end_date": "2026-12-10",
+                                    "student": [self.amy.pk, self.ben.pk]})
+        self.autumn.refresh_from_db()
+        self.purchase.refresh_from_db()
+        self.assertEqual((self.autumn.name, self.purchase.class_name), ("Thurs 11am", "Thurs 11am"))
+        self.assertEqual(set(Student.objects.values_list("class_name", flat=True)), {"Thurs 11am Spring"})
+
+    def test_needs_a_distinct_name(self):
+        StudioClass.objects.create(name="Wed 5pm")
+        self.assertContains(self.client.post(self.url, {"new_name": "Thurs 11am", "old_name": ""}),
+                            "Give this term")
+        self.assertContains(self.client.post(self.url, {"new_name": "wed 5pm"}), "already a class with that name")
+        self.assertEqual(StudioClass.objects.count(), 2)
+
+    def test_statement_shows_which_class_the_debt_is_from(self):
+        material = make_material(name="Sheet", markup_percentage=Decimal("0"), pack_quantity=Decimal("1"))
+        p = Purchase(student=self.amy, material=material, quantity=Decimal("2"), purchase_date=date(2026, 11, 1),
+                     class_name="Rings course")
+        p.set_price(reprice=True)
+        p.save()
+        st = statements.statement_for(self.amy)  # £15 + £10 bought, £10 paid off the oldest first
+        self.assertEqual(st.owed_by_class, {"Thurs 11am": Decimal("5.00"), "Rings course": Decimal("10.00")})
+        self.assertEqual(st.owed_from_other_classes("Rings course"), [("Thurs 11am", Decimal("5.00"))])

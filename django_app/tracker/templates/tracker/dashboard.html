@@ -9,6 +9,7 @@
   <div class="btn-row">
     <a role="button" href="{% url 'tracker:purchase_new' %}">Record purchase</a>
     <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}">Record payment</a>
+    <a role="button" class="ghost" href="{% url 'tracker:sale_new' %}?next={% url 'tracker:dashboard' %}">Record a sale</a>
   </div>
 </div>
 
@@ -17,6 +18,11 @@
     <div class="label"><span class="gem"></span>Class payments</div>
     <div class="value">{{ class_totals.total|gbp }}</div>
     {% include "tracker/partials/method_breakdown.html" with totals=class_totals %}
+  </div>
+  <div class="stat steel">
+    <div class="label"><span class="gem"></span><a href="{% url 'tracker:sale_list' %}">Sales {{ tax_year }}</a></div>
+    <div class="value">{{ other_sales.total|gbp }}</div>
+    <div class="detail">Jewellery, courses etc. paid on the spot · <a href="{% url 'tracker:sale_list' %}">See all →</a></div>
   </div>
   <div class="stat ruby">
     <div class="label"><span class="gem"></span>Owed by students</div>
@@ -68,14 +74,4 @@
   {% endfor %}
   <a class="chip add" href="{% url 'tracker:student_add' %}">+ Add student</a>
 </div>
-
-<h2 class="section-title">Recent activity</h2>
-<section class="panel">
-  <header><h3>Purchases</h3><a href="{% url 'tracker:purchase_new' %}" class="small" role="button">Record purchase</a></header>
-  {% include "tracker/partials/purchase_table.html" with purchases=recent_purchases show_student=True %}
-</section>
-<section class="panel">
-  <header><h3>Payments</h3><a href="{% url 'tracker:payments_report' %}">View all payments →</a></header>
-  {% include "tracker/partials/payment_table.html" with payments=recent_payments show_student=True %}
-</section>
 {% endblock %}

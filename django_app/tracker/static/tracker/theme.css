@@ -217,6 +217,24 @@ form.inline { display: inline; margin: 0; }
 .chip .count { font-size: .74rem; background: var(--steel-wash); color: var(--steel); border-radius: 999px; padding: .05rem .55rem; }
 .chip.add { border-style: dashed; color: var(--muted); }
 
+/* Materials: jump-to-category chips */
+html { scroll-behavior: smooth; }
+.category-nav { justify-content: flex-start; margin-bottom: 1.5rem; }
+.category-nav .chip { padding: .4rem .95rem; font-size: .9rem; }
+.category-section, #recent-changes { scroll-margin-top: 1rem; }
+.category-section:target { border-color: var(--steel-light); }
+.legend { margin-top: .4rem; }
+.legend .link-sample { color: var(--steel); }
+
+/* Tap-friendly radio choices (Record a sale) */
+.choice-pills > div { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+.choice-pills label { display: inline-flex; align-items: center; margin: 0; padding: .5rem 1.05rem; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); cursor: pointer; font-weight: 300; }
+.choice-pills label:hover { border-color: var(--steel-light); }
+.choice-pills input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+.choice-pills label:has(input:checked) { border-color: var(--steel); background: var(--steel-wash); color: var(--steel); font-weight: 400; }
+.choice-pills label:has(input:focus-visible) { outline: 2px solid var(--steel-light); outline-offset: 2px; }
+.inline-hint { display: inline; }
+
 /* Class groups */
 details.group { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--pico-card-box-shadow); margin-bottom: 1rem; padding: 0; overflow: hidden; }
 details.group > summary { padding: 1rem 1.35rem; display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }

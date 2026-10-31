@@ -4,7 +4,7 @@ from pathlib import Path
 from django import forms
 from django.utils import timezone
 
-from .models import Category, Material, Payment, Project, Purchase, Student, StudioClass
+from .models import Category, Material, Payment, Project, Purchase, Sale, Student, StudioClass
 
 
 class DateInput(forms.DateInput):
@@ -102,6 +102,38 @@ class PaymentForm(forms.ModelForm):
         return amount
 
 
+class SaleForm(forms.ModelForm):
+    class Meta:
+        model = Sale
+        fields = ["sale_type", "description", "amount", "payment_method", "sale_date", "student", "where"]
+        widgets = {
+            "sale_type": forms.RadioSelect,
+            "payment_method": forms.RadioSelect,
+            "sale_date": DateInput(),
+            "amount": DecimalInput(),
+            "where": forms.TextInput(attrs={"list": "sale-places"}),
+        }
+
+    def __init__(self, *args, students=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if students is not None:
+            self.fields["student"].queryset = students
+        self.fields["student"].label_from_instance = student_label
+        self.fields["student"].empty_label = "Not a student / someone else"
+
+    def clean_amount(self):
+        amount = self.cleaned_data["amount"]
+        if amount <= 0:
+            raise forms.ValidationError("Amount must be more than zero.")
+        return amount
+
+
+class SaleFilterForm(forms.Form):
+    sale_type = forms.ChoiceField(choices=[("", "Everything"), *Sale.Type.choices], required=False, label="What")
+    start = forms.DateField(required=False, widget=DateInput(), label="From")
+    end = forms.DateField(required=False, widget=DateInput(), label="To")
+
+
 class PaymentFilterForm(forms.Form):
     GROUP_CHOICES = [("", "Everyone"), ("class", "Class students"), ("sales", "Sales channels")]
 
@@ -114,6 +146,50 @@ class PaymentFilterForm(forms.Form):
 class DateRangeForm(forms.Form):
     start = forms.DateField(required=False, widget=DateInput(), label="From")
     end = forms.DateField(required=False, widget=DateInput(), label="To")
+
+
+def term_label(day) -> str:
+    """"Autumn 2026" – UK school-style terms, used to name a finished term's class."""
+    season = "Spring" if day.month <= 3 else "Summer" if day.month <= 7 else "Autumn"
+    return f"{season} {day.year}"
+
+
+class NextTermForm(forms.Form):
+    """Copy a class for next term. Keeping the same name renames this term's class so its history stays separate."""
+
+    new_name = forms.CharField(label="Next term's class name", max_length=100)
+    old_name = forms.CharField(label="Rename this term's class to", max_length=100, required=False)
+    start_date = forms.DateField(label="Next term starts", required=False, widget=DateInput())
+    end_date = forms.DateField(label="Next term ends", required=False, widget=DateInput())
+    old_end_date = forms.DateField(label="This term ends", required=False, widget=DateInput(),
+                                   help_text="Once this date has passed, this term's class counts as finished.")
+
+    def __init__(self, *args, studio_class, **kwargs):
+        self.studio_class = studio_class
+        today = timezone.localdate()
+        kwargs.setdefault("initial", {
+            "new_name": studio_class.name,
+            "old_name": f"{studio_class.name} – {term_label(studio_class.start_date or studio_class.end_date or today)}",
+            "old_end_date": studio_class.end_date or today,
+        })
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        data = super().clean()
+        new_name = " ".join(data.get("new_name", "").split())
+        old_name = " ".join((data.get("old_name") or "").split())
+        data["new_name"], data["old_name"] = new_name, old_name
+        others = StudioClass.objects.exclude(pk=self.studio_class.pk)
+        if new_name == self.studio_class.name:
+            if not old_name or old_name == new_name:
+                self.add_error("old_name", "Give this term's class a different name, e.g. with the term added.")
+            elif others.filter(name__iexact=old_name).exists():
+                self.add_error("old_name", "There's already a class with that name.")
+        elif others.filter(name__iexact=new_name).exists():
+            self.add_error("new_name", "There's already a class with that name.")
+        if data.get("start_date") and data.get("end_date") and data["end_date"] < data["start_date"]:
+            self.add_error("end_date", "The end date is before the start date.")
+        return data
 
 
 class CourseFeeForm(forms.Form):

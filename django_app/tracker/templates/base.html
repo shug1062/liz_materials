@@ -38,6 +38,7 @@
         <a href="{% url 'tracker:class_list' %}" {% if "class" in section or "archive" in section %}class="active"{% endif %}>Classes</a>
         <a href="{% url 'tracker:purchase_new' %}" {% if "purchase" in section %}class="active"{% endif %}>Record purchase</a>
         <a href="{% url 'tracker:payments_report' %}" {% if "payment" in section %}class="active"{% endif %}>Payments</a>
+        <a href="{% url 'tracker:sale_list' %}" {% if "sale_" in section %}class="active"{% endif %}>Sales</a>
         <a href="{% url 'tracker:reports' %}" {% if "report" in section %}class="active"{% endif %}>Reports</a>
         <a href="{% url 'tracker:material_list' %}" {% if "material" in section or "price" in section %}class="active"{% endif %}>Materials</a>
         <a href="{% url 'tracker:project_list' %}" {% if "project" in section %}class="active"{% endif %}>Projects</a>

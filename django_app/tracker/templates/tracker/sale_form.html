@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block brand_href %}{% if in_class %}{{ next }}{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block mode_switch %}{% if in_class %}<a role="button" class="mode-switch liz" href="{% url 'tracker:dashboard' %}">Switch to Liz mode</a>{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block nav %}{% if in_class %}
+<nav class="site-nav class-nav" aria-label="Class mode">
+  <span class="class-mode-label"><span class="gem"></span>Class mode · {{ class_label }}</span>
+  <span class="spacer"></span>
+  <a href="{{ next }}">Back to class</a>
+</nav>
+{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block content %}
+<section class="panel form-card">
+  <header><h3>{{ title }}</h3></header>
+  <form method="post">
+    <div class="body">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      {% if not sale %}<p class="sub-text">For things paid for there and then – jewellery, a course, materials at a market. It’s counted as money received but doesn’t go on anyone’s account.</p>{% endif %}
+      {{ form.non_field_errors }}
+      <fieldset>
+        <legend>{{ form.sale_type.label|capfirst }}</legend>
+        {{ form.sale_type.errors }}<div class="choice-pills">{{ form.sale_type }}</div>
+      </fieldset>
+      {{ form.description.errors }}<label>Description <span class="sub-text inline-hint">optional</span> {{ form.description }}</label>
+      <div class="grid">
+        <div>{{ form.amount.errors }}<label>Amount (£) {{ form.amount }}</label></div>
+        <div>{{ form.sale_date.errors }}<label>Date {{ form.sale_date }}</label></div>
+      </div>
+      <fieldset>
+        <legend>Paid by</legend>
+        {{ form.payment_method.errors }}<div class="choice-pills">{{ form.payment_method }}</div>
+      </fieldset>
+      <div class="grid">
+        <div>{{ form.student.errors }}<label>Student <span class="sub-text inline-hint">optional</span> {{ form.student }}</label></div>
+        <div>{{ form.where.errors }}<label>Where <span class="sub-text inline-hint">optional</span> {{ form.where }}</label>
+          <datalist id="sale-places">{% for p in places %}<option value="{{ p }}">{% endfor %}</datalist></div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ next }}">Cancel</a>
+      {% if not sale %}<button type="submit" name="another" value="1" class="ghost">Save and add another</button>{% endif %}
+      <button type="submit">Save sale</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

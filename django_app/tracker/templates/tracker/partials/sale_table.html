@@ -1,0 +1,30 @@
+{% load money %}
+<figure>
+<table>
+  <thead>
+    <tr><th>Date</th><th>What</th><th>Description</th>{% if show_student %}<th>Student</th>{% endif %}<th>Where</th>
+        <th class="num">Amount</th><th>Paid by</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for s in sales %}
+    <tr>
+      <td class="nowrap">{{ s.sale_date|date:"j M Y" }}</td>
+      <td><span class="badge sale-{{ s.sale_type }}">{{ s.get_sale_type_display }}</span></td>
+      <td>{{ s.description|default:"–" }}</td>
+      {% if show_student %}<td>{% if s.student %}<a href="{{ s.student.get_absolute_url }}">{{ s.student }}</a>{% else %}–{% endif %}</td>{% endif %}
+      <td>{{ s.where|default:"–" }}</td>
+      <td class="num credit">{{ s.amount|gbp }}</td>
+      <td><span class="badge {{ s.payment_method|slugify }}">{{ s.payment_method }}</span></td>
+      <td>
+        <div class="actions">
+          <a class="small ghost" role="button" href="{% url 'tracker:sale_edit' s.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>
+          <form method="post" action="{% url 'tracker:sale_delete' s.pk %}" class="inline">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="small danger-ghost">Delete</button></form>
+        </div>
+      </td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="8" class="empty">No sales.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</figure>

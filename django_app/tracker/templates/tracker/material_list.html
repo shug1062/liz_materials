@@ -6,15 +6,26 @@
     <p class="eyebrow">Price list</p>
     <h1>Materials</h1>
     <p class="lede">Student prices include your markup.</p>
+    <p class="sub-text legend">Supplier: <span class="link-sample">Name ↗</span> links to the product page and can be price-checked · plain Name has no link saved</p>
   </div>
   <div class="btn-row">
     <a role="button" class="ghost" href="?inactive={% if show_inactive %}0{% else %}1{% endif %}">{% if show_inactive %}Hide{% else %}Show{% endif %} hidden</a>
     <a role="button" class="ghost" href="{% url 'tracker:material_arrange' %}">Arrange</a>
     <a role="button" class="ghost" href="{% url 'tracker:material_silver' %}">Choose silver</a>
-    {% if has_supplier_links %}<button class="ghost" hx-get="{% url 'tracker:price_check' %}" hx-target="#price-check" hx-indicator="#price-check-spinner">Check supplier prices</button>{% endif %}
+    {% if has_supplier_links %}<button class="ghost" hx-post="{% url 'tracker:price_check' %}" hx-target="#price-check" hx-indicator="#price-check-spinner">Check supplier prices</button>{% endif %}
     <a role="button" href="{% url 'tracker:material_add' %}">+ Add material</a>
   </div>
 </div>
+
+{% regroup materials by category as by_category %}
+{% if by_category|length > 1 %}
+<nav class="chips category-nav" aria-label="Jump to category">
+  {% for group in by_category %}
+  <a class="chip capitalise" href="#cat-{{ group.grouper.pk|default:'none' }}">{{ group.grouper|default:"Uncategorised" }} <span class="count">{{ group.list|length }}</span></a>
+  {% endfor %}
+  {% if recent_changes %}<a class="chip" href="#recent-changes">Recent price changes</a>{% endif %}
+</nav>
+{% endif %}
 
 <div id="price-check-spinner" class="htmx-indicator panel spinner-panel"><span class="spinner">Checking supplier websites…</span></div>
 <div id="price-check"></div>
@@ -40,9 +51,8 @@
 </details>
 {% endif %}
 
-{% regroup materials by category as by_category %}
 {% for group in by_category %}
-<section class="panel">
+<section class="panel category-section" id="cat-{{ group.grouper.pk|default:'none' }}">
   <header><h3 class="capitalise">{{ group.grouper|default:"Uncategorised" }}</h3><span class="badge">{{ group.list|length }}</span></header>
   <figure>
   <table class="materials-table">
@@ -59,14 +69,14 @@
         <td class="num">{{ m.cost_per_item|gbp }}</td>
         <td class="num">{{ m.markup_percentage|floatformat:"-1" }}%</td>
         <td class="num"><strong class="credit">{{ m.final_price|gbp }}</strong><span class="sub-text">per {{ m.unit_type }}</span></td>
-        <td class="nowrap">{% if m.supplier_url %}<a href="{{ m.supplier_url }}" target="_blank" rel="noopener noreferrer">{{ m.supplier|default:"Link" }} ↗</a>{% else %}{{ m.supplier|default:"–" }}{% endif %}</td>
+        <td class="nowrap">{% if m.supplier_url %}<a href="{{ m.supplier_url }}" target="_blank" rel="noopener noreferrer" title="Open the supplier's product page">{{ m.supplier|default:"Link" }} ↗</a>{% elif m.supplier %}<span title="No supplier link saved – edit to add one">{{ m.supplier }}</span>{% else %}–{% endif %}</td>
         <td>
           <div class="actions">
             <a class="small ghost" role="button" href="{% url 'tracker:material_edit' m.pk %}">Edit</a>
             <details class="menu">
               <summary class="small ghost" role="button" aria-label="More actions for {{ m.name }}">…</summary>
               <div class="menu-items">
-                {% if m.supplier_url %}<button class="small ghost" hx-get="{% url 'tracker:price_check' %}?id={{ m.pk }}" hx-target="#price-check" hx-indicator="#price-check-spinner">Check price</button>{% endif %}
+                {% if m.supplier_url %}<button class="small ghost" hx-post="{% url 'tracker:price_check' %}" hx-vals='{"id": "{{ m.pk }}"}' hx-target="#price-check" hx-indicator="#price-check-spinner">Check price</button>{% endif %}
                 <a class="small ghost" role="button" href="{% url 'tracker:material_add' %}?copy={{ m.pk }}">Duplicate</a>
                 <a class="small ghost" role="button" href="{% url 'tracker:price_history' %}?material={{ m.pk }}">Price history</a>
                 <form method="post" action="{% url 'tracker:material_toggle' m.pk %}" class="inline">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="small ghost">{% if m.is_active %}Hide from purchases{% else %}Show in purchases{% endif %}</button></form>
@@ -86,7 +96,7 @@
 {% endfor %}
 
 {% if recent_changes %}
-<h2 class="section-title">Recent price changes <a class="small-link" href="{% url 'tracker:price_history' %}">See all, plus silver prices →</a></h2>
+<h2 class="section-title" id="recent-changes">Recent price changes <a class="small-link" href="{% url 'tracker:price_history' %}">See all, plus silver prices →</a></h2>
 <section class="panel">
   <figure>
   <table>

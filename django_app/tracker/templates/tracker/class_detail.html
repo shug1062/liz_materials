@@ -12,6 +12,7 @@
   <div class="btn-row">
     <a role="button" class="ghost" href="{% url 'tracker:class_edit' studio_class.pk %}">Edit class</a>
     <a role="button" class="ghost" href="{% url 'tracker:class_charge' studio_class.pk %}">Charge course fee</a>
+    <a role="button" class="ghost" href="{% url 'tracker:class_next_term' studio_class.pk %}">Copy for next term</a>
     <a role="button" class="ghost" href="{% url 'tracker:class_day' studio_class.pk %}">Class summary</a>
     <a role="button" href="{% url 'tracker:class_mode' %}?class_name={{ studio_class.name|urlencode }}">Class mode</a>
   </div>
@@ -26,7 +27,8 @@
       {% for s in students %}
         <tr>
           <td><a href="{{ s.get_absolute_url }}"><strong>{{ s.name }}</strong></a>{% if s.email %}<span class="sub-text">{{ s.email }}</span>{% endif %}</td>
-          <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}</td>
+          <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}
+            {% for name, amount in s.carried %}<span class="sub-text">incl. {{ amount|gbp }} from {{ name }}</span>{% endfor %}</td>
         </tr>
       {% empty %}
         <tr><td class="empty">Nobody yet – add students from the list.</td></tr>

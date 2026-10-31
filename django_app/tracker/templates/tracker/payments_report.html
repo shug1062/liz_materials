@@ -5,7 +5,10 @@
     <p class="eyebrow">Accounts</p>
     <h1>Payments</h1>
   </div>
-  <a role="button" href="{% url 'tracker:payment_new' %}">Record payment</a>
+  <div class="btn-row">
+    <a role="button" class="ghost" href="{% url 'tracker:sale_new' %}?next={{ request.get_full_path|urlencode }}">Record a sale</a>
+    <a role="button" href="{% url 'tracker:payment_new' %}">Record payment</a>
+  </div>
 </div>
 <section class="panel">
   <div class="body">
@@ -21,6 +24,7 @@
     <div class="btn-row">
       <a href="{% url 'tracker:payments_report' %}" class="small">This tax year ({{ tax_year }})</a>
       <a href="{% url 'tracker:payments_report' %}?all=1" class="small">Show all payments</a>
+      <a href="{% url 'tracker:sale_list' %}" class="small">One-off sales are on the Sales page →</a>
     </div>
   </div>
 </section>

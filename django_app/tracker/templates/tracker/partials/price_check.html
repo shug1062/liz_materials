@@ -4,6 +4,13 @@
     <h3>Supplier prices</h3>
     <span class="lede">{{ rows|length }} checked · {{ n_changed }} changed{% if n_failed %} · <span class="owes">{{ n_failed }} couldn't be checked</span>{% endif %}</span>
   </header>
+  {% if rate_limited or remaining %}
+  <div class="body">
+    {% if rate_limited %}<p class="note">Cooksongold asked us to slow down, so some prices weren’t checked. Wait a few minutes, then check again – the ones not checked come first.</p>
+    {% elif remaining %}<p class="sub-text">{{ remaining }} more still to check – prices are checked {{ batch }} at a time, longest-unchecked first, so the supplier doesn’t block us.
+      <button type="button" class="small ghost" hx-post="{% url 'tracker:price_check' %}" hx-target="#price-check" hx-indicator="#price-check-spinner">Check the next {{ batch }}</button></p>{% endif %}
+  </div>
+  {% endif %}
   <form method="post" action="{% url 'tracker:price_apply' %}">
     {% csrf_token %}
     <figure>

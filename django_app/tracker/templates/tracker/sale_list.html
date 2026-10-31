@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Accounts</p>
+    <h1>Sales</h1>
+    <p class="lede">Jewellery, courses, vouchers and anything else paid for on the spot – in class, at a market or anywhere else. Counted as money received, never on a student’s account.</p>
+  </div>
+  <a role="button" href="{% url 'tracker:sale_new' %}">+ Record a sale</a>
+</div>
+<section class="panel">
+  <div class="body">
+    <form method="get">
+      <div class="filters">
+        <label>What {{ form.sale_type }}</label>
+        <label>From {{ form.start }}</label>
+        <label>To {{ form.end }}</label>
+        <div class="btn-row filter-buttons"><button type="submit" class="small">Show</button></div>
+      </div>
+    </form>
+    <div class="btn-row">
+      <a href="{% url 'tracker:sale_list' %}" class="small">This tax year ({{ tax_year }})</a>
+      <a href="{% url 'tracker:sale_list' %}?all=1" class="small">Show all sales</a>
+    </div>
+  </div>
+</section>
+
+<section class="stats spaced">
+  <div class="stat emerald"><div class="label"><span class="gem"></span>Total sales</div><div class="value">{{ totals.total|gbp }}</div>
+    {% include "tracker/partials/method_breakdown.html" %}</div>
+  {% for label, amount in by_type %}
+  <div class="stat compact neutral"><div class="label"><span class="gem"></span>{{ label }}</div><div class="value">{{ amount|gbp }}</div></div>
+  {% endfor %}
+</section>
+
+<section class="panel">{% include "tracker/partials/sale_table.html" with show_student=True %}</section>
+{% endblock %}

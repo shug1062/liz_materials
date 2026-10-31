@@ -295,6 +295,33 @@ class Payment(models.Model):
         return f"{self.student} – £{self.amount}"
 
 
+class Sale(models.Model):
+    """Something sold and paid for on the spot – jewellery, a course, materials at a market – outside a student's tab."""
+
+    class Type(models.TextChoices):
+        JEWELLERY = "jewellery", "Jewellery"
+        COURSE = "course", "Course / workshop"
+        MATERIALS = "materials", "Materials"
+        VOUCHER = "voucher", "Gift voucher"
+        OTHER = "other", "Other"
+
+    sale_date = models.DateField("date", default=timezone.localdate)
+    sale_type = models.CharField("what was sold", max_length=20, choices=Type.choices, default=Type.JEWELLERY)
+    description = models.CharField(max_length=200, blank=True, help_text="e.g. “Silver hoop earrings”")
+    amount = models.DecimalField("amount (£)", max_digits=10, decimal_places=2)
+    payment_method = models.CharField("paid by", max_length=20, choices=Payment.Method.choices, default=Payment.Method.CASH)
+    student = models.ForeignKey(Student, null=True, blank=True, on_delete=models.SET_NULL, related_name="sales",
+                                help_text="Optional – leave blank for someone who isn't a student.")
+    where = models.CharField(max_length=100, blank=True, help_text="A class, or e.g. “Christmas market”.")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-sale_date", "-id"]
+
+    def __str__(self):
+        return f"{self.get_sale_type_display()} – £{self.amount}"
+
+
 class PriceChange(models.Model):
     material = models.ForeignKey(Material, on_delete=models.CASCADE, related_name="price_changes")
     old_price = models.DecimalField(max_digits=10, decimal_places=4)
