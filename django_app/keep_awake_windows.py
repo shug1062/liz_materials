@@ -10,21 +10,31 @@ ES_SYSTEM_REQUIRED = 0x00000001
 PORT = 8000
 
 
+def port_in_use() -> bool:
+    with socket.socket() as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", PORT)) == 0
+
+
 def open_browser_when_ready(server: subprocess.Popen) -> None:
     for _ in range(60):
         if server.poll() is not None:
             return
-        with socket.socket() as s:
-            s.settimeout(0.5)
-            if s.connect_ex(("127.0.0.1", PORT)) == 0:
-                webbrowser.open(f"http://localhost:{PORT}/")
-                return
+        if port_in_use():
+            webbrowser.open(f"http://localhost:{PORT}/")
+            return
         time.sleep(0.5)
 
 
 def main() -> int:
     if sys.platform != "win32":
         raise RuntimeError("This launcher is only for Windows.")
+
+    # Windows would let a second server share the port, splitting requests between the two.
+    if port_in_use():
+        print(f"Something is already using port {PORT}, probably a copy of the app started another way.")
+        print("Close it (or run: taskkill /im python.exe /f) and start again.")
+        return 1
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     set_execution_state = kernel32.SetThreadExecutionState

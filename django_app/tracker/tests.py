@@ -348,13 +348,17 @@ class BackupSettingsTests(TransactionTestCase):
             self.assertEqual(StudioSettings.objects.get(pk=1).last_backup_date, timezone.localdate())
 
 
+@patch("keep_awake_windows.sys.platform", "win32")
 class WindowsKeepAwakeTests(TestCase):
-    @patch("keep_awake_windows.sys.platform", "win32")
-    @patch("keep_awake_windows.subprocess.call", return_value=0)
+    @patch("keep_awake_windows.webbrowser.open")
+    @patch("keep_awake_windows.port_in_use", side_effect=[False, True])
+    @patch("keep_awake_windows.subprocess.Popen")
     @patch("keep_awake_windows.ctypes.WinDLL", create=True)
-    def test_prevents_sleep_until_waitress_exits(self, load_kernel32, run_server):
+    def test_prevents_sleep_until_waitress_exits(self, load_kernel32, run_server, port_in_use, open_browser):
         set_execution_state = Mock(side_effect=[1, 1])
         load_kernel32.return_value.SetThreadExecutionState = set_execution_state
+        run_server.return_value.poll.return_value = None
+        run_server.return_value.wait.return_value = 0
 
         self.assertEqual(keep_awake_windows.main(), 0)
 
@@ -363,6 +367,14 @@ class WindowsKeepAwakeTests(TestCase):
             call(0x80000000),
         ])
         run_server.assert_called_once()
+        open_browser.assert_called_once_with("http://localhost:8000/")
+
+    @patch("keep_awake_windows.port_in_use", return_value=True)
+    @patch("keep_awake_windows.subprocess.Popen")
+    def test_will_not_share_the_port_with_another_server(self, run_server, port_in_use):
+        with patch("sys.stdout"):
+            self.assertEqual(keep_awake_windows.main(), 1)
+        run_server.assert_not_called()
 
 
 @override_settings(SUPPLIER_PRICES_INCLUDE_VAT=True)

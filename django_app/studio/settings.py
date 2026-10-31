@@ -27,7 +27,9 @@ DEBUG = os.environ.get("DJANGO_DEBUG") == "1"
 # Home-network app reached by whatever IP the laptop gets; set a comma-separated list to restrict.
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 STUDIO_LAN_IP = os.environ.get("STUDIO_LAN_IP", "")
-STUDIO_HOSTNAME = os.environ.get("STUDIO_HOSTNAME", "")
+STUDIO_HOSTNAME = os.environ.get("STUDIO_HOSTNAME") or (
+    os.environ.get("COMPUTERNAME", "") if os.name == "nt" else ""
+)
 # Off by default: anyone on the home Wi-Fi gets straight in. Set STUDIO_REQUIRE_LOGIN=1 to require a password.
 REQUIRE_LOGIN = os.environ.get("STUDIO_REQUIRE_LOGIN") == "1"
 
