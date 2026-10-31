@@ -1,0 +1,20 @@
+{% load money %}
+<figure>
+<table>
+  <thead><tr><th>{{ first }}</th>{% if show_quantity %}<th class="num">Sold</th>{% endif %}<th class="num">Sales</th><th class="num">Cost</th><th class="num">Profit</th><th class="num">Margin</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{% if month %}{{ r.label|date:"F Y" }}{% else %}{{ r.label }}{% endif %}</td>
+      {% if show_quantity %}<td class="num">{{ r.quantity|floatformat:"-2" }} <span class="unit">{{ r.unit }}</span></td>{% endif %}
+      <td class="num">{{ r.sales|gbp }}</td>
+      <td class="num">{{ r.cost|gbp }}</td>
+      <td class="num"><strong class="{% if r.profit < 0 %}owes{% else %}credit{% endif %}">{{ r.profit|gbp }}</strong></td>
+      <td class="num">{% if r.margin is not None %}{{ r.margin|floatformat:0 }}%{% else %}–{% endif %}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="6" class="empty">No purchases in this period.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</figure>

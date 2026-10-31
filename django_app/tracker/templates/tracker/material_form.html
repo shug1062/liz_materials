@@ -39,7 +39,8 @@
 
       <div class="grid">
         <div>{{ form.supplier.errors }}<label>Supplier name {{ form.supplier }}</label></div>
-        <div><label class="checkbox-row">{{ form.is_active }} Show in purchase list</label></div>
+        <div><label class="checkbox-row">{{ form.is_active }} Show in purchase list</label>
+             <label class="checkbox-row tight">{{ form.is_favourite }} Quick button in class mode</label></div>
       </div>
       {{ form.notes.errors }}<label>Notes {{ form.notes }}</label>
     </div>

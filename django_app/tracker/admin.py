@@ -82,7 +82,7 @@ class PurchaseAdmin(admin.ModelAdmin):
     list_filter = ("purchase_date", "student__class_name", "material__category")
     search_fields = ("student__name", "material__name", "notes")
     autocomplete_fields = ("student", "material")
-    readonly_fields = ("unit_price", "total_cost")
+    readonly_fields = ("unit_price", "total_cost", "unit_cost", "cost_total", "cost_is_estimate")
     date_hierarchy = "purchase_date"
     list_select_related = ("student", "material", "project")
 

@@ -1,21 +1,5 @@
-
-## 2. Faster recording during class (biggest day-to-day gain)
-
-At the moment each purchase is a separate form: pick the student, pick the material, enter a quantity, save, and repeat.
-
-- **Class mode:** tap a class, then tap a student's tile, then tap materials from a short "favourites" grid, using + and − buttons for quantities. Then save the whole basket at once.
-- **Settle up:** a button showing what the student owes, with one-tap Cash or Card for the exact amount.
-- **Material search as you type,** since names like "Sterling Silver Open Jump Ring Heavy 10mm" are slow to find in a long dropdown.
-- **Undo instead of "Are you sure?" pop-ups,** e.g. "Purchase deleted — Undo". Pop-ups are clumsy on an iPad.
-
-
-remember - students see the site when i'm adding purchases in classes, so i need them not to see details of things like markups, profits etc.
-
-## 3. Money and records
-
-- **Record your cost at the time of each purchase.** Right now only the student price is saved. If the purchase price is saved too, the app can show profit per material, class and month. This is worth adding **soon**, because it can't be worked out afterwards for purchases already recorded.
-- **Student statements:** a print-friendly page, or a ready-written email, listing a student's purchases and payments. Useful for chasing what's owed.
-- **Archive students at the end of term** instead of deleting them, so their history is kept but they're hidden from everyday lists.
+- 
+- 
 - **Reports:** monthly income split by cash and card, materials sold, and profit, with a spreadsheet (CSV) export for your tax return.
 - **Price history:** when silver or supplier prices change, keep the old price, and flag materials whose margin has got thin.
 
@@ -34,4 +18,17 @@ remember - students see the site when i'm adding purchases in classes, so i need
 3. Student statements, archiving, and the laptop reliability items.
 4. Reports and price history.
 
-Which would you like me to start on? My suggestion is section 1, beginning with supplier price updates.
+
+student see the dashboard - dont show the sales channel and amount of profit oon teh main page, have that in a seperate tab.
+
+make go into class when return back, no all groups
+when i add a purchase, eg to annes account, then i want to add a purchae to karens account it goes back to all teh classes, ratther than teh class i was it. make it go back to the class i was in as if i'm adding a purchase int hat class, i'm likelt to make another purchase in that class.
+
+can app feed attendeeds on courses directly? setup class?
+-- i've a wix website with attendees on there - can it pull the information directly?
+
+copy and paste materials, duplicate materials and then tweak it.
+
+add up total costs of silver for one day classes based on daily rate. this is for liz to know -- i want to know how much the whole class spent on silver and all materials they purchased
+
+when i'm puytting in numbers of grammes, when i try and go to the next tab, its increasing the value. this is likely when i'm scrollign on the trackpad to mvoe around the page and its staying on the amounts and changing that.

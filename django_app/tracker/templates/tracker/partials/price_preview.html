@@ -1,12 +1,5 @@
 {% load money %}{% if material %}
 <div class="price-box">
-  <div class="breakdown">
-    {% if material.pricing_type == "per_gram_item" and material.weight_per_unit %}
-      {{ material.base_price|gbp }}/g × {{ material.weight_per_unit|floatformat:"-4" }}g = {{ material.cost_per_item|gbp }} per item
-    {% elif material.pack_quantity > 1 %}
-      Pack of {{ material.pack_quantity|floatformat:"-3" }} at {{ material.base_price|gbp }} = {{ material.cost_per_item|gbp }} each
-    {% endif %}
-  </div>
   <div>Price <strong>{{ material.final_price|gbp }}</strong> per {{ material.unit_type }}</div>
   {% if quantity > 0 %}<div class="total">Total {{ total|gbp }}</div>{% endif %}
 </div>

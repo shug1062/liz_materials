@@ -8,7 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from tracker.models import (
-    Category, ClassOrder, Material, Payment, Project, Purchase, Student, money,
+    Category, ClassOrder, Material, Payment, Project, Purchase, Student, estimated_unit_cost, money,
 )
 
 PRICING_TYPES = {"fixed": "fixed", "per_kg": "per_gram", "per_kg_item": "per_gram_item"}
@@ -101,12 +101,16 @@ class Command(BaseCommand):
                     created_at=parse_dt(r.get("created_at")),
                 )
 
+            markups = dict(Material.objects.values_list("id", "markup_percentage"))
             for r in rows("purchases"):
+                quantity = dec(r["quantity"]).quantize(Decimal("0.01"))
+                unit_price = dec(r["unit_price"]).quantize(Decimal("0.0001"))
+                unit_cost = estimated_unit_cost(unit_price, markups[r["material_id"]])
                 Purchase.objects.create(
                     id=r["id"], student_id=r["student_id"], material_id=r["material_id"],
-                    project_id=r.get("project_id"), quantity=dec(r["quantity"]).quantize(Decimal("0.01")),
-                    unit_price=dec(r["unit_price"]).quantize(Decimal("0.0001")),
+                    project_id=r.get("project_id"), quantity=quantity, unit_price=unit_price,
                     total_cost=money(dec(r["total_cost"])),
+                    unit_cost=unit_cost, cost_total=money(quantity * unit_cost), cost_is_estimate=True,
                     purchase_date=parse_dt(r.get("purchase_date")).date(), notes=r.get("notes") or "",
                 )
 

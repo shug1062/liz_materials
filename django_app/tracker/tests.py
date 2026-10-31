@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 from datetime import date, timedelta
 from decimal import Decimal
@@ -11,8 +12,10 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from . import suppliers
-from .models import Category, ClassOrder, Material, Payment, PriceChange, Project, Purchase, SilverPrice, Student
+from . import statements, suppliers
+from .models import (
+    Category, ClassOrder, Material, Payment, PriceChange, Project, Purchase, SilverPrice, Student, estimated_unit_cost,
+)
 
 
 def make_material(**kwargs):
@@ -309,3 +312,229 @@ class ImportTests(TestCase):
         with tempfile.NamedTemporaryFile(suffix=".db") as legacy:
             call_command("import_legacy", legacy.name, "--if-empty", stdout=out)
         self.assertIn("not importing", out.getvalue())
+
+
+class ClassModeTests(TestCase):
+    def setUp(self):
+        self.anne = Student.objects.create(name="Anne", class_name="Tue pm")
+        self.rings = make_material(name="Jump rings 10mm")  # £5 / 50 + 20% = £0.12 each
+        self.sheet = make_material(name="Silver sheet", pricing_type=Material.PricingType.PER_GRAM, unit_type="gram",
+                                   base_price=Decimal("2.50"), pack_quantity=Decimal("1"), markup_percentage=Decimal("20"))
+        self.basket_url = reverse("tracker:class_basket", args=[self.anne.pk])
+
+    def test_pages_render(self):
+        self.assertContains(self.client.get(reverse("tracker:class_mode")), "Tue pm")
+        self.assertContains(self.client.get(reverse("tracker:class_mode"), {"class_name": "Tue pm"}), "Anne")
+        self.assertEqual(self.client.get(self.basket_url).status_code, 200)
+
+    def test_basket_saves_every_line_and_returns_to_class(self):
+        response = self.client.post(self.basket_url, {
+            f"qty_{self.rings.pk}": "10", f"qty_{self.sheet.pk}": "2.5", "qty_999": "3", "purchase_date": "2026-10-31",
+        })
+        self.assertRedirects(response, reverse("tracker:class_mode") + "?class_name=Tue+pm")
+        totals = sorted(Purchase.objects.values_list("total_cost", flat=True))
+        self.assertEqual(totals, [Decimal("1.20"), Decimal("7.50")])
+
+    def test_basket_ignores_blank_zero_and_hidden_materials(self):
+        self.sheet.is_active = False
+        self.sheet.save()
+        self.client.post(self.basket_url, {f"qty_{self.rings.pk}": "0", f"qty_{self.sheet.pk}": "2", "qty_x": "1"})
+        self.assertFalse(Purchase.objects.exists())
+
+    def test_class_screens_hide_costs_and_admin_menu(self):
+        Student.objects.create(name="Karen", class_name="Tue pm")
+        Payment.objects.create(student=self.anne, amount=Decimal("1"))
+        for url in [self.basket_url, reverse("tracker:class_mode") + "?class_name=Tue+pm",
+                    reverse("tracker:class_search") + "?q=sheet"]:
+            with self.subTest(url=url):
+                html = self.client.get(url).content.decode()
+                for secret in ["markup", "Markup", "£5.00", "£2.50", "Supplier", 'href="/payments/"', 'href="/materials/"',
+                               'href="/profit/"', "Profit"]:
+                    self.assertNotIn(secret, html)
+        self.assertContains(self.client.get(self.basket_url), "£3.00")  # student price per gram
+
+    def test_search_matches_all_words(self):
+        response = self.client.get(reverse("tracker:class_search"), {"q": "jump 10"})
+        self.assertEqual(list(response.context["materials"]), [self.rings])
+
+    def test_quick_buttons_prefer_favourites(self):
+        response = self.client.get(self.basket_url)
+        self.assertEqual(len(response.context["quick"]), 2)
+        self.sheet.is_favourite = True
+        self.sheet.save()
+        response = self.client.get(self.basket_url)
+        self.assertEqual(list(response.context["quick"]), [self.sheet])
+
+    def test_settle_up_pays_exact_amount_and_can_be_undone(self):
+        self.client.post(self.basket_url, {f"qty_{self.sheet.pk}": "2.5"})
+        self.client.post(reverse("tracker:settle_up", args=[self.anne.pk]), {"method": "Card"})
+        payment = Payment.objects.get()
+        self.assertEqual((payment.amount, payment.payment_method), (Decimal("7.50"), "Card"))
+
+        undo_id = self.client.session["undo"]["id"]
+        self.client.post(reverse("tracker:undo"), {"id": undo_id})
+        self.assertFalse(Payment.objects.exists())
+        self.assertEqual(Purchase.objects.count(), 1)
+
+    def test_settle_up_when_nothing_owed(self):
+        self.client.post(reverse("tracker:settle_up", args=[self.anne.pk]), {"method": "Cash"})
+        self.assertFalse(Payment.objects.exists())
+
+    def test_undo_basket_removes_what_was_added(self):
+        self.client.post(self.basket_url, {f"qty_{self.rings.pk}": "10", f"qty_{self.sheet.pk}": "1"})
+        response = self.client.get(reverse("tracker:class_mode"), {"class_name": "Tue pm"})
+        self.assertContains(response, "Added 2 items (£4.20) for Anne.")
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        self.assertFalse(Purchase.objects.exists())
+
+
+class UndoDeleteTests(TestCase):
+    def test_deleted_purchase_and_payment_come_back(self):
+        student = Student.objects.create(name="Amy")
+        purchase = Purchase(student=student, material=make_material(), quantity=Decimal("3"), notes="ring")
+        purchase.set_price(reprice=True)
+        purchase.save()
+        self.client.post(reverse("tracker:purchase_delete", args=[purchase.pk]))
+        self.assertFalse(Purchase.objects.exists())
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        restored = Purchase.objects.get()
+        self.assertEqual((restored.pk, restored.notes, restored.total_cost), (purchase.pk, "ring", Decimal("0.36")))
+
+        payment = Payment.objects.create(student=student, amount=Decimal("2"))
+        self.client.post(reverse("tracker:payment_delete", args=[payment.pk]))
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        self.assertTrue(Payment.objects.filter(pk=payment.pk).exists())
+
+    def test_undo_bar_shows_once_and_rejects_stale_ids(self):
+        payment = Payment.objects.create(student=Student.objects.create(name="Amy"), amount=Decimal("2"))
+        self.client.post(reverse("tracker:payment_delete", args=[payment.pk]))
+        self.assertContains(self.client.get(reverse("tracker:dashboard")), "Undo</button>")
+        self.assertNotContains(self.client.get(reverse("tracker:dashboard")), "Undo</button>")
+        self.client.post(reverse("tracker:undo"), {"id": "wrong"})
+        self.assertFalse(Payment.objects.exists())
+
+    def test_purchase_preview_hides_supplier_cost(self):
+        material = make_material()
+        response = self.client.get(reverse("tracker:price_preview"), {"material": material.pk, "quantity": "10"})
+        self.assertNotContains(response, "Pack of")
+        self.assertNotContains(response, "£5.00")
+
+
+class CostAndProfitTests(TestCase):
+    def setUp(self):
+        self.material = make_material()  # cost £0.10 each, sells at £0.12
+
+    def buy(self, student, qty, when):
+        p = Purchase(student=student, material=self.material, quantity=Decimal(qty), purchase_date=when)
+        p.set_price(reprice=True)
+        p.save()
+        return p
+
+    def test_cost_is_frozen_at_time_of_sale(self):
+        p = self.buy(Student.objects.create(name="Amy"), "10", date(2026, 10, 1))
+        self.assertEqual((p.unit_cost, p.cost_total, p.cost_is_estimate), (Decimal("0.1000"), Decimal("1.00"), False))
+        self.material.base_price = Decimal("10.00")
+        self.material.save()
+        p.quantity = Decimal("20")
+        p.set_price(reprice=False)
+        self.assertEqual((p.unit_cost, p.cost_total, p.total_cost), (Decimal("0.1000"), Decimal("2.00"), Decimal("2.40")))
+
+    def test_estimated_cost_takes_markup_back_off(self):
+        self.assertEqual(estimated_unit_cost(Decimal("0.1200"), Decimal("20")), Decimal("0.1000"))
+        self.assertEqual(estimated_unit_cost(Decimal("1.5200"), Decimal("0")), Decimal("1.5200"))
+
+    def test_profit_report_totals_and_groupings(self):
+        self.buy(Student.objects.create(name="Amy", class_name="Tue"), "10", date(2026, 9, 5))
+        self.buy(Student.objects.create(name="Ben", class_name="Wed"), "50", date(2026, 10, 7))
+        response = self.client.get(reverse("tracker:profit_report"))
+        total = response.context["total"]
+        self.assertEqual((total["sales"], total["cost"], total["profit"]), (Decimal("7.20"), Decimal("6.00"), Decimal("1.20")))
+        self.assertEqual([r["label"] for r in response.context["by_class"]], ["Wed", "Tue"])
+        self.assertEqual(len(response.context["by_month"]), 2)
+
+        october = self.client.get(reverse("tracker:profit_report"), {"start": "2026-10-01"}).context["total"]
+        self.assertEqual(october["profit"], Decimal("1.00"))
+
+    def test_import_marks_legacy_costs_as_estimates(self):
+        Material.objects.all().delete()  # import only runs into an empty database
+        with tempfile.NamedTemporaryFile(suffix=".db") as legacy:
+            db = sqlite3.connect(legacy.name)
+            db.executescript("""
+                CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT, class_name TEXT, email TEXT, phone TEXT,
+                                       notes TEXT, is_sales_channel INTEGER, created_at TEXT);
+                CREATE TABLE materials (id INTEGER PRIMARY KEY, name TEXT, category TEXT, unit_type TEXT, base_price REAL,
+                                        pack_quantity REAL, markup_percentage REAL, supplier TEXT, supplier_url TEXT,
+                                        is_active INTEGER, pricing_type TEXT, weight_per_unit REAL, notes TEXT);
+                CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT, description TEXT, created_at TEXT);
+                CREATE TABLE purchases (id INTEGER PRIMARY KEY, student_id INTEGER, project_id INTEGER, material_id INTEGER,
+                                        quantity REAL, unit_price REAL, total_cost REAL, purchase_date TEXT, notes TEXT);
+                CREATE TABLE payments (id INTEGER PRIMARY KEY, student_id INTEGER, amount REAL, payment_date TEXT,
+                                       payment_method TEXT, notes TEXT);
+                INSERT INTO students VALUES (1, 'Amy', 'Tue', '', '', '', 0, '2026-01-06 10:00:00');
+                INSERT INTO materials VALUES (1, 'Sheet', 'sheet silver', 'gram', 3.1891, 1, 20, 'Cooksongold', '', 1, 'per_kg', NULL, '');
+                INSERT INTO purchases VALUES (1, 1, NULL, 1, 2, 3.82692, 7.65384, '2026-01-07', '');
+                INSERT INTO payments VALUES (1, 1, 5, '2026-01-07', 'Cash', '');
+            """)
+            db.commit()
+            db.close()
+            call_command("import_legacy", legacy.name, stdout=StringIO())
+        p = Purchase.objects.get()
+        self.assertEqual((p.unit_cost, p.cost_total, p.cost_is_estimate), (Decimal("3.1891"), Decimal("6.38"), True))
+        self.assertEqual(Material.objects.get().pricing_type, "per_gram")
+
+
+class StatementTests(TestCase):
+    def setUp(self):
+        self.amy = Student.objects.create(name="Amy Smith", class_name="Tue", email="amy@example.com")
+        self.rings = make_material(name="Jump rings")  # £0.12 each
+        self.sheet = make_material(name="Silver sheet", unit_type="gram", base_price=Decimal("3.00"),
+                                   pack_quantity=Decimal("1"), markup_percentage=Decimal("0"))
+
+    def buy(self, material, qty, when):
+        p = Purchase(student=self.amy, material=material, quantity=Decimal(qty), purchase_date=when)
+        p.set_price(reprice=True)
+        p.save()
+
+    def test_payments_clear_oldest_purchases_first(self):
+        self.buy(self.rings, "10", date(2026, 9, 1))   # £1.20
+        self.buy(self.sheet, "2.5", date(2026, 10, 1))  # £7.50
+        self.buy(self.rings, "5", date(2026, 10, 8))    # £0.60
+        Payment.objects.create(student=self.amy, amount=Decimal("1.20"))
+        st = statements.statement_for(self.amy)
+        self.assertEqual(st.owed, Decimal("8.10"))
+        self.assertEqual([i["label"] for i in st.items], ["Silver sheet, 2.5g", "Jump rings × 5"])
+
+    def test_email_is_a_summary_without_rates(self):
+        self.buy(self.rings, "10", date(2026, 9, 1))
+        st = statements.statement_for(self.amy)
+        body = st.email_body()
+        self.assertIn("Hi Amy,", body)
+        self.assertIn("£1.20", body)
+        self.assertIn("Jump rings × 10", body)
+        self.assertNotIn("£0.12", body)
+        self.assertTrue(st.mailto().startswith("mailto:amy@example.com?subject=Your%20materials%20balance"))
+
+    def test_no_email_button_without_address_or_debt(self):
+        self.assertEqual(statements.statement_for(self.amy).owed, Decimal("0"))
+        self.amy.email = ""
+        self.amy.save()
+        self.buy(self.rings, "1", date(2026, 9, 1))
+        self.assertEqual(statements.statement_for(self.amy).mailto(), "")
+
+    def test_credit_is_reported(self):
+        Payment.objects.create(student=self.amy, amount=Decimal("5"))
+        st = statements.statement_for(self.amy)
+        self.assertEqual((st.owed, st.credit, st.items), (Decimal("0"), Decimal("5"), []))
+
+    def test_statement_and_balances_pages(self):
+        self.buy(self.sheet, "2", date(2026, 10, 1))
+        Student.objects.create(name="Paid up")
+        statement = self.client.get(reverse("tracker:student_statement", args=[self.amy.pk]))
+        self.assertContains(statement, "Balance due")
+        self.assertContains(statement, "£6.00")
+        for secret in ["markup", "Markup", "cost", "Supplier"]:
+            self.assertNotContains(statement, secret)
+
+        balances = self.client.get(reverse("tracker:balances"))
+        self.assertEqual([st.student.name for st in balances.context["rows"]], ["Amy Smith"])
+        self.assertContains(balances, "mailto:amy@example.com")

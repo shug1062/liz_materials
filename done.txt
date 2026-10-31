@@ -1,0 +1,31 @@
+## 2. Faster recording during class (biggest day-to-day gain)
+
+At the moment each purchase is a separate form: pick the student, pick the material, enter a quantity, save, and repeat.
+
+- **Class mode:** tap a class, then tap a student's tile, then tap materials from a short "favourites" grid, using + and − buttons for quantities. Then save the whole basket at once.
+- **Settle up:** a button showing what the student owes, with one-tap Cash or Card for the exact amount.
+- **Material search as you type,** since names like "Sterling Silver Open Jump Ring Heavy 10mm" are slow to find in a long dropdown.
+- **Undo instead of "Are you sure?" pop-ups,** e.g. "Purchase deleted — Undo". Pop-ups are clumsy on an iPad.
+
+
+remember - students see the site when i'm adding purchases in classes, so i need them not to see details of things like markups, profits etc.
+
+
+## 3. Money and records
+
+- **Record your cost at the time of each purchase.** Right now only the student price is saved. If the purchase price is saved too, the app can show profit per material, class and month. This is worth adding **soon**, because it can't be worked out afterwards for purchases already recorded.
+- -- how do you get my costs for this???
+
+**Student statements:** a print-friendly page, or a ready-written email, listing a student's purchases and payments. Useful for chasing what's owed.
+
+- combine with this -- email balances directly. if students give email address, can i send them their balance due? not a detailed breakdown or rates or anythign else, jsut a summary of what they owe and what items it covers.
+
+
+**Archive students at the end of term** instead of deleting them, so their history is kept but they're hidden from everyday lists.
+
+- - yes - this is a good idea.
+  - dont have this automatically done
+  - we should build a classes tab that shows what classes i have.
+  - we could then have a button there for archive students that arent already enrolled in a current/future class.
+  - students list could have a achived students list.
+  - when adding students to a class, have the archived students at the bottom of the list and a search function to find them too.x

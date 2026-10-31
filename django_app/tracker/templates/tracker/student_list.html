@@ -8,6 +8,7 @@
     {% if selected %}<p class="lede"><a href="{% url 'tracker:student_list' %}">← Show all classes</a></p>{% endif %}
   </div>
   <div class="btn-row">
+    <a role="button" class="ghost" href="{% url 'tracker:balances' %}">Balances to chase</a>
     <a role="button" class="ghost" href="{% url 'tracker:class_reorder' %}">Reorder classes</a>
     <a role="button" href="{% url 'tracker:student_add' %}{% if selected %}?class_name={{ selected|urlencode }}{% endif %}">+ Add student</a>
   </div>
@@ -20,6 +21,7 @@
     <span class="badge">{{ group.students|length }} student{{ group.students|length|pluralize }}</span>
     {% if group.owed %}<span class="meta owes">Owed {{ group.owed|gbp }}</span>{% endif %}
     {% if group.credit %}<span class="meta credit">Credit {{ group.credit|gbp }}</span>{% endif %}
+    <a class="small ghost summary-action" role="button" href="{% url 'tracker:class_mode' %}?class_name={% if group.name != no_class %}{{ group.name|urlencode }}{% endif %}">Class mode</a>
   </summary>
   <figure>
   <table class="students-table">

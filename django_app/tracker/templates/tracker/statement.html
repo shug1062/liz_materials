@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load money %}
+{% block title %}Statement · {{ student.name }}{% endblock %}
+{% block content %}
+<div class="no-print">
+  <a class="crumb" href="{{ student.get_absolute_url }}">← {{ student.name }}</a>
+</div>
+
+<article class="panel statement">
+  <div class="body">
+    <div class="statement-head">
+      <div>
+        <p class="eyebrow">Statement</p>
+        <h1>{{ student.name }}</h1>
+        <p class="lede">{{ today|date:"j F Y" }}</p>
+      </div>
+      <div class="statement-total">
+        {% if statement.owed %}
+          <span class="label">Balance due</span><span class="value owes">{{ statement.owed|gbp }}</span>
+        {% elif statement.credit %}
+          <span class="label">In credit</span><span class="value credit">{{ statement.credit|gbp }}</span>
+        {% else %}
+          <span class="label">Balance</span><span class="value">All paid</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if statement.items %}
+      <h3>This covers</h3>
+      <ul class="covers">{% for item in statement.items %}<li>{{ item.label }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <h3>Account history</h3>
+    <figure>
+    <table>
+      <thead><tr><th>Date</th><th>Description</th><th class="num">Charged</th><th class="num">Paid</th></tr></thead>
+      <tbody>
+      {% for when, description, quantity, unit, charged, paid in history %}
+        <tr>
+          <td class="nowrap">{{ when|date:"j M Y" }}</td>
+          <td>{{ description }}{% if quantity %} <span class="unit">× {{ quantity|floatformat:"-2" }} {{ unit }}</span>{% endif %}</td>
+          <td class="num">{% if charged %}{{ charged|gbp }}{% endif %}</td>
+          <td class="num credit">{% if paid %}{{ paid|gbp }}{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="empty">Nothing recorded yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </figure>
+    <p class="statement-foot">Thank you – {{ studio_signoff }}, {{ studio_name }}</p>
+  </div>
+</article>
+
+<div class="btn-row no-print statement-actions">
+  <button type="button" onclick="window.print()">Print</button>
+  {% if statement.owed and statement.mailto %}<a role="button" class="ghost" href="{{ statement.mailto }}">Email balance</a>{% endif %}
+</div>
+
+{% if statement.owed %}
+<section class="panel no-print">
+  <header><h3>Email message</h3>{% if not student.email %}<a href="{% url 'tracker:student_edit' student.pk %}">Add an email address</a>{% endif %}</header>
+  <div class="body">
+    <p class="lede">“Email balance” opens this in your mail app ready to send. If that doesn't work, copy it into any email.</p>
+    <textarea readonly rows="12" id="email-text" onclick="this.select()">{{ statement.email_body }}</textarea>
+    <button type="button" class="small ghost" onclick="const t=document.getElementById('email-text');t.select();document.execCommand('copy');this.textContent='Copied ✓'">Copy message</button>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

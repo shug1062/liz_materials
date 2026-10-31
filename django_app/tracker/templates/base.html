@@ -19,18 +19,20 @@
   <header class="site-header">
     <div class="container">
       <div class="bar">
-        <a href="{% url 'tracker:dashboard' %}" class="brand">
+        <a href="{% block brand_href %}{% url 'tracker:dashboard' %}{% endblock %}" class="brand">
           <img src="{% static 'tracker/logo.png' %}" alt="The Silver Bird logo">
           <span><span class="brand-name">The Silver Bird</span><span class="brand-sub">Studio &amp; jewellery school</span></span>
         </a>
         <span class="today">{% now "l j F Y" %}</span>
       </div>
+      {% block nav %}
       {% if user.is_authenticated %}
       <nav class="site-nav" aria-label="Main">
         <a href="{% url 'tracker:dashboard' %}" {% if section == "dashboard" %}class="active"{% endif %}>Dashboard</a>
         <a href="{% url 'tracker:student_list' %}" {% if "student" in section or "class" in section %}class="active"{% endif %}>Students</a>
         <a href="{% url 'tracker:purchase_new' %}" {% if "purchase" in section %}class="active"{% endif %}>Record purchase</a>
         <a href="{% url 'tracker:payments_report' %}" {% if "payment" in section %}class="active"{% endif %}>Payments</a>
+        <a href="{% url 'tracker:profit_report' %}" {% if "profit" in section %}class="active"{% endif %}>Profit</a>
         <a href="{% url 'tracker:material_list' %}" {% if "material" in section or "price" in section %}class="active"{% endif %}>Materials</a>
         <a href="{% url 'tracker:project_list' %}" {% if "project" in section %}class="active"{% endif %}>Projects</a>
         <span class="spacer"></span>
@@ -38,6 +40,7 @@
         {% if require_login %}<form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}<button class="small ghost">Log out</button></form>{% endif %}
       </nav>
       {% endif %}
+      {% endblock %}
     </div>
   </header>
   {% endwith %}
@@ -45,6 +48,13 @@
     {% for message in messages %}
       <div class="flash {{ message.tags }}" role="status"><span class="gem" aria-hidden="true"></span>{{ message }}</div>
     {% endfor %}
+    {% if undo_offer %}
+      <form class="flash success undo-bar" method="post" action="{% url 'tracker:undo' %}" role="status">
+        {% csrf_token %}<input type="hidden" name="id" value="{{ undo_offer.id }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <span class="gem" aria-hidden="true"></span><span>{{ undo_offer.label }}</span>
+        <button class="small ghost">Undo</button>
+      </form>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer class="site-footer">

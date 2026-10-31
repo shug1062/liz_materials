@@ -7,7 +7,8 @@
     <h1>Dashboard</h1>
   </div>
   <div class="btn-row">
-    <a role="button" href="{% url 'tracker:purchase_new' %}">Record purchase</a>
+    <a role="button" href="{% url 'tracker:class_mode' %}">Start class mode</a>
+    <a role="button" class="ghost" href="{% url 'tracker:purchase_new' %}">Record purchase</a>
     <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}">Record payment</a>
   </div>
 </div>
@@ -21,7 +22,7 @@
   <div class="stat ruby">
     <div class="label"><span class="gem"></span>Owed by students</div>
     <div class="value">{{ class_debt|gbp }}</div>
-    <div class="detail"><a href="{% url 'tracker:student_list' %}">See who owes →</a></div>
+    <div class="detail"><a href="{% url 'tracker:balances' %}">See who owes →</a></div>
   </div>
   <div class="stat amethyst">
     <div class="label"><span class="gem"></span>Student credit</div>
@@ -59,9 +60,10 @@
 {% endif %}
 
 <h2 class="section-title">Classes</h2>
+<p class="lede">Tap a class to open it in class mode – safe for students to see.</p>
 <div class="chips">
   {% for name, count in classes %}
-    <a class="chip" href="{% url 'tracker:student_list' %}?class_name={{ name|urlencode }}">{{ name }} <span class="count">{{ count }}</span></a>
+    <a class="chip" href="{% url 'tracker:class_mode' %}?class_name={{ name|urlencode }}">{{ name }} <span class="count">{{ count }}</span></a>
   {% empty %}
     <p class="lede">No classes yet – add a student with a class name to get started.</p>
   {% endfor %}

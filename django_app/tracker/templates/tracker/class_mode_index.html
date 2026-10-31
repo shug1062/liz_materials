@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block brand_href %}{% url 'tracker:class_mode' %}{% endblock %}
+{% block nav %}
+<nav class="site-nav class-nav" aria-label="Class mode">
+  <span class="class-mode-label"><span class="gem"></span>Class mode</span>
+  <span class="spacer"></span>
+  <a href="{% url 'tracker:dashboard' %}">Exit class mode</a>
+</nav>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Class mode</p>
+    <h1>Choose a class</h1>
+  </div>
+</div>
+<div class="tile-grid">
+  {% for value, label, count in classes %}
+    <a class="tile class-tile" href="{% url 'tracker:class_mode' %}?class_name={{ value|urlencode }}">
+      <span class="tile-name">{{ label }}</span>
+      <span class="unit">{{ count }} student{{ count|pluralize }}</span>
+    </a>
+  {% empty %}
+    <p class="empty">No classes yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

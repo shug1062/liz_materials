@@ -32,7 +32,7 @@
     {% for m in group.list %}
       <tr {% if not m.is_active %}class="inactive"{% endif %}>
         <td class="name"><strong>{{ m.name }}</strong>{% if m.pack_quantity > 1 %}<span class="sub-text">Pack of {{ m.pack_quantity|floatformat:"-3" }}</span>{% elif m.weight_per_unit %}<span class="sub-text">{{ m.weight_per_unit|floatformat:"-4" }}g each</span>{% endif %}</td>
-        <td><span class="badge {{ m.pricing_type }}">{% if m.pricing_type == "per_gram" %}Per gram{% elif m.pricing_type == "per_gram_item" %}By weight{% else %}Fixed{% endif %}</span>{% if not m.is_active %} <span class="badge inactive">Inactive</span>{% endif %}</td>
+        <td><span class="badge {{ m.pricing_type }}">{% if m.pricing_type == "per_gram" %}Per gram{% elif m.pricing_type == "per_gram_item" %}By weight{% else %}Fixed{% endif %}</span>{% if not m.is_active %} <span class="badge inactive">Inactive</span>{% endif %}{% if m.is_favourite %} <span class="badge quick">Quick</span>{% endif %}</td>
         <td class="num">{{ m.base_price|gbp }}{% if m.pricing_type != "fixed" %}<span class="sub-text">per gram</span>{% endif %}</td>
         <td class="num">{{ m.cost_per_item|gbp }}</td>
         <td class="num">{{ m.markup_percentage|floatformat:"-1" }}%</td>

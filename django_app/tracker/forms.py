@@ -92,6 +92,11 @@ class PaymentFilterForm(forms.Form):
     end = forms.DateField(required=False, widget=DateInput(), label="To")
 
 
+class DateRangeForm(forms.Form):
+    start = forms.DateField(required=False, widget=DateInput(), label="From")
+    end = forms.DateField(required=False, widget=DateInput(), label="To")
+
+
 class MaterialForm(forms.ModelForm):
     category_name = forms.CharField(
         label="Category", required=False, max_length=100,
@@ -102,7 +107,7 @@ class MaterialForm(forms.ModelForm):
         model = Material
         fields = [
             "name", "category_name", "pricing_type", "unit_type", "base_price", "pack_quantity",
-            "weight_per_unit", "markup_percentage", "supplier", "supplier_url", "is_active", "notes",
+            "weight_per_unit", "markup_percentage", "supplier", "supplier_url", "is_active", "is_favourite", "notes",
         ]
         labels = {"base_price": "Supplier price (£)", "pack_quantity": "Items in pack"}
         widgets = {

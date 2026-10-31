@@ -1,0 +1,7 @@
+{% load money %}{% for m in materials %}
+<button type="button" class="tile material-tile" data-add data-id="{{ m.pk }}" data-name="{{ m.name }}"
+        data-price="{{ m.final_price }}" data-unit="{{ m.unit_type }}" data-step="{% if m.is_counted %}1{% else %}0.5{% endif %}">
+  <span class="tile-name">{{ m.name }}</span>
+  <span class="tile-price">{{ m.final_price|gbp }} <span class="unit">per {{ m.unit_type }}</span></span>
+</button>
+{% empty %}{% if searching %}<p class="empty">Nothing matches – try fewer words.</p>{% endif %}{% endfor %}

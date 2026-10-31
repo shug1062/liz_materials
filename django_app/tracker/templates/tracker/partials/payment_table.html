@@ -19,9 +19,7 @@
       <td>
         <div class="actions">
           <a class="small ghost" role="button" href="{% url 'tracker:payment_edit' p.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>
-          <button class="small danger-ghost"
-                  hx-post="{% url 'tracker:payment_delete' p.pk %}"
-                  hx-confirm="Delete payment of {{ p.amount|gbp }} from {{ p.student }}?">Delete</button>
+          <button class="small danger-ghost" hx-post="{% url 'tracker:payment_delete' p.pk %}">Delete</button>
         </div>
       </td>
     </tr>

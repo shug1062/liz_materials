@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% load money %}
+{% block brand_href %}{{ back }}{% endblock %}
+{% block nav %}
+<nav class="site-nav class-nav" aria-label="Class mode">
+  <span class="class-mode-label"><span class="gem"></span>Class mode · {{ class_label }}</span>
+  <span class="spacer"></span>
+  <a href="{{ back }}">Back to class</a>
+</nav>
+{% endblock %}
+{% block content %}
+<a class="crumb" href="{{ back }}">← {{ class_label }}</a>
+<div class="page-head">
+  <div class="profile">
+    <div class="avatar" aria-hidden="true">{{ student.name|slice:":1"|upper }}</div>
+    <div><p class="eyebrow">Adding materials for</p><h1>{{ student.name }}</h1></div>
+  </div>
+  {% if owed %}
+  <form class="settle" method="post" action="{% url 'tracker:settle_up' student.pk %}">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ back }}">
+    <span class="settle-label">To pay <strong>{{ owed|gbp }}</strong></span>
+    <button name="method" value="Cash">Paid cash</button>
+    <button name="method" value="Card" class="ghost">Paid card</button>
+  </form>
+  {% endif %}
+</div>
+
+<form method="post" id="basket-form" class="basket-layout">
+  {% csrf_token %}
+  <div>
+    <section class="panel">
+      <header><h3>Quick add</h3></header>
+      <div class="body tile-grid materials">{% include "tracker/partials/material_tiles.html" with materials=quick %}</div>
+    </section>
+    <section class="panel">
+      <header><h3>Find a material</h3></header>
+      <div class="body">
+        <input type="search" name="q" placeholder="Type part of a name, e.g. “jump 10”" autocomplete="off" data-search
+               hx-get="{% url 'tracker:class_search' %}" hx-trigger="input changed delay:250ms, search" hx-target="#search-results">
+        <div id="search-results" class="tile-grid materials"></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel basket">
+    <header><h3>Basket</h3><span class="badge" data-basket-count>0 items</span></header>
+    <div class="body">
+      <div id="basket-lines"><p class="empty" data-basket-empty>Tap a material to add it.</p></div>
+      <div class="basket-total"><span>Total</span><strong data-basket-total>£0.00</strong></div>
+      <details class="more">
+        <summary>Date &amp; project</summary>
+        <label>Date <input type="date" name="purchase_date" value="{{ today|date:'Y-m-d' }}"></label>
+        <label>Project
+          <select name="project"><option value="">None</option>{% for p in projects %}<option value="{{ p.pk }}">{{ p.name }}</option>{% endfor %}</select>
+        </label>
+      </details>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ back }}">Cancel</a>
+      <button type="submit" data-basket-submit disabled>Add to {{ student.name }}’s account</button>
+    </div>
+  </section>
+</form>
+
+<template id="basket-line">
+  <div class="basket-line">
+    <span class="line-name"></span>
+    <span class="stepper">
+      <button type="button" class="ghost" data-delta="-1" aria-label="Less">−</button>
+      <input type="text" inputmode="decimal" autocomplete="off" aria-label="Quantity">
+      <button type="button" class="ghost" data-delta="1" aria-label="More">+</button>
+    </span>
+    <span class="line-unit unit"></span>
+    <strong class="line-total"></strong>
+    <button type="button" class="remove ghost" aria-label="Remove">×</button>
+  </div>
+</template>
+{% endblock %}

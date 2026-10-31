@@ -35,6 +35,9 @@ class StudentQuerySet(models.QuerySet):
             total_payments=total(Payment, "amount"),
         )
 
+    def active(self):
+        return self.filter(is_archived=False)
+
 
 class Student(models.Model):
     name = models.CharField(max_length=200)
@@ -45,6 +48,8 @@ class Student(models.Model):
     is_sales_channel = models.BooleanField(
         "sales channel", default=False, help_text="A shop/market rather than a class student."
     )
+    is_archived = models.BooleanField("archived", default=False, help_text="Hidden from everyday lists; history is kept.")
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     objects = StudentQuerySet.as_manager()
@@ -55,6 +60,11 @@ class Student(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.class_name and not StudioClass.objects.filter(name=self.class_name).exists():
+            StudioClass.objects.create(name=self.class_name, sort_order=StudioClass.objects.count())
+
     def get_absolute_url(self):
         return reverse("tracker:student_detail", args=[self.pk])
 
@@ -64,23 +74,41 @@ class Student(models.Model):
         return self.total_payments - self.total_purchases
 
 
-class ClassOrder(models.Model):
-    class_name = models.CharField(max_length=100, unique=True)
+class StudioClass(models.Model):
+    """A class/course. Students join one by having its name as their class_name."""
+
+    name = models.CharField(max_length=100, unique=True)
     sort_order = models.PositiveIntegerField(default=0)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True, help_text="After this date the class counts as finished.")
+    notes = models.TextField(blank=True)
 
     class Meta:
-        ordering = ["sort_order", "class_name"]
+        ordering = ["sort_order", "name"]
+        verbose_name = "class"
+        verbose_name_plural = "classes"
 
     def __str__(self):
-        return self.class_name
+        return self.name
+
+    def get_absolute_url(self):
+        return reverse("tracker:class_detail", args=[self.pk])
+
+    @property
+    def status(self) -> str:
+        today = timezone.localdate()
+        if self.end_date and self.end_date < today:
+            return "finished"
+        if self.start_date and self.start_date > today:
+            return "upcoming"
+        return "current"
 
     @classmethod
-    def ordered_class_names(cls) -> list[str]:
-        used = set(
-            Student.objects.exclude(class_name="").values_list("class_name", flat=True).distinct()
-        )
-        ordered = [c for c in cls.objects.values_list("class_name", flat=True) if c in used]
-        return ordered + sorted(used - set(ordered))
+    def ordered_class_names(cls, include_finished=True) -> list[str]:
+        classes = cls.objects.all()
+        if not include_finished:
+            classes = [c for c in classes if c.status != "finished"]
+        return [c.name for c in classes]
 
 
 class Category(models.Model):
@@ -118,6 +146,7 @@ class Material(models.Model):
     supplier = models.CharField(max_length=100, blank=True, default="Cooksongold")
     supplier_url = models.URLField(max_length=500, blank=True)
     is_active = models.BooleanField("active", default=True, help_text="Inactive materials are hidden from new purchases.")
+    is_favourite = models.BooleanField("quick button", default=False, help_text="Show as a quick button in class mode.")
     sort_order = models.PositiveIntegerField(default=0)
     notes = models.TextField(blank=True)
     last_updated = models.DateTimeField(auto_now=True)
@@ -127,6 +156,11 @@ class Material(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_counted(self) -> bool:
+        """Sold in whole units (items) rather than measured amounts (grams, cm)."""
+        return self.unit_type in {"item", "piece", "sheet"}
 
     @property
     def cost_per_item(self) -> Decimal:
@@ -163,6 +197,12 @@ class Purchase(models.Model):
     quantity = models.DecimalField(max_digits=10, decimal_places=2)
     unit_price = models.DecimalField(max_digits=12, decimal_places=4)
     total_cost = models.DecimalField(max_digits=10, decimal_places=2)
+    # Studio's own cost, frozen at the time of sale so later supplier price changes don't rewrite history.
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    cost_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    cost_is_estimate = models.BooleanField(default=False, help_text="Worked out from price ÷ markup (recorded before costs were saved).")
+    # The student's class when they bought it, so moving class next term doesn't move past sales.
+    class_name = models.CharField("class", max_length=100, blank=True)
     purchase_date = models.DateField(default=timezone.localdate)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now)
@@ -173,11 +213,24 @@ class Purchase(models.Model):
     def __str__(self):
         return f"{self.student} – {self.material} × {self.quantity}"
 
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.class_name:
+            self.class_name = self.student.class_name
+        super().save(*args, **kwargs)
+
     def set_price(self, reprice: bool):
-        """Lock in the material's current price, or keep the original price when editing."""
+        """Lock in the material's current price and cost, or keep the originals when editing."""
         if reprice or self.unit_price is None:
             self.unit_price = self.material.final_price
+            self.unit_cost = self.material.cost_per_item.quantize(UNIT_PRICE_PLACES, rounding=ROUND_HALF_UP)
+            self.cost_is_estimate = False
         self.total_cost = money(self.quantity * self.unit_price)
+        self.cost_total = money(self.quantity * self.unit_cost) if self.unit_cost is not None else None
+
+
+def estimated_unit_cost(unit_price: Decimal, markup_percentage: Decimal) -> Decimal:
+    """Best guess at an old purchase's cost: take the material's markup back off the price charged."""
+    return (unit_price / (1 + markup_percentage / 100)).quantize(UNIT_PRICE_PLACES, rounding=ROUND_HALF_UP)
 
 
 class Payment(models.Model):

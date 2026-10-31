@@ -61,6 +61,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "tracker.middleware.login_settings",
+                "tracker.undo.offer",
             ],
         },
     },
@@ -113,3 +114,7 @@ BACKUP_KEEP = 60
 
 # Supplier prices are stored including VAT unless STUDIO_PRICES_EX_VAT=1 (e.g. if VAT-registered).
 SUPPLIER_PRICES_INCLUDE_VAT = os.environ.get("STUDIO_PRICES_EX_VAT") != "1"
+
+# Used in balance emails and printed statements.
+STUDIO_NAME = "The Silver Bird"
+STUDIO_SIGNOFF = os.environ.get("STUDIO_SIGNOFF", "Liz")

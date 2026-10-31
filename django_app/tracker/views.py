@@ -1,9 +1,12 @@
+from datetime import date
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Count, ProtectedError, Sum
+from django.db.models import Count, ProtectedError, Q, Sum
+from django.db.models.functions import TruncMonth
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -11,8 +14,10 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from . import suppliers
-from .forms import MaterialForm, PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm, StudentForm
+from . import statements, suppliers, undo
+from .forms import (
+    DateRangeForm, MaterialForm, PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm, StudentForm,
+)
 from .models import (
     ZERO, Category, ClassOrder, Material, Payment, PriceChange, Project, Purchase, SilverPrice, Student, money,
 )
@@ -85,6 +90,7 @@ def student_list(request):
     return render(request, "tracker/student_list.html", {
         "groups": grouped,
         "selected": selected,
+        "no_class": NO_CLASS,
         "channels": Student.objects.with_balances().filter(is_sales_channel=True),
     })
 
@@ -95,7 +101,34 @@ def student_detail(request, pk):
         "student": student,
         "purchases": student.purchases.select_related("material", "project"),
         "payments": student.payments.all(),
+        "statement": statements.statement_for(student),
     })
+
+
+def student_statement(request, pk):
+    """Print-friendly statement: what's owed, the items it covers, and the full account history."""
+    student = get_object_or_404(Student, pk=pk)
+    history = sorted(
+        [(p.purchase_date, p.material.name, p.quantity, p.material.unit_type, p.total_cost, None)
+         for p in student.purchases.select_related("material")]
+        + [(p.payment_date, f"Payment – {p.payment_method.lower()}", None, "", None, p.amount)
+           for p in student.payments.all()],
+        key=lambda row: row[0],
+    )
+    return render(request, "tracker/statement.html", {
+        "student": student,
+        "statement": statements.statement_for(student),
+        "history": history,
+        "today": timezone.localdate(),
+        "studio_name": settings.STUDIO_NAME,
+        "studio_signoff": settings.STUDIO_SIGNOFF,
+    })
+
+
+def balances_to_chase(request):
+    owing = [s for s in Student.objects.with_balances().filter(is_sales_channel=False) if s.balance < 0]
+    rows = sorted((statements.statement_for(s) for s in owing), key=lambda st: -st.owed)
+    return render(request, "tracker/balances.html", {"rows": rows, "total": sum((r.owed for r in rows), ZERO)})
 
 
 def student_form(request, pk=None):
@@ -162,12 +195,12 @@ def price_preview(request):
 
 @require_POST
 def purchase_delete(request, pk):
-    purchase = get_object_or_404(Purchase, pk=pk)
+    purchase = get_object_or_404(Purchase.objects.select_related("student", "material"), pk=pk)
     student = purchase.student
+    undo.remember(request, f"Deleted {purchase.material} × {purchase.quantity:g} for {student}.", deleted=[purchase])
     purchase.delete()
     if request.htmx:
         return HttpResponse(headers={"HX-Refresh": "true"})
-    messages.success(request, "Purchase deleted.")
     return redirect(_next_url(request, student.get_absolute_url()))
 
 
@@ -196,13 +229,123 @@ def student_balance(request):
 
 @require_POST
 def payment_delete(request, pk):
-    payment = get_object_or_404(Payment, pk=pk)
+    payment = get_object_or_404(Payment.objects.select_related("student"), pk=pk)
     student = payment.student
+    undo.remember(request, f"Deleted payment of £{payment.amount} from {student}.", deleted=[payment])
     payment.delete()
     if request.htmx:
         return HttpResponse(headers={"HX-Refresh": "true"})
-    messages.success(request, "Payment deleted.")
     return redirect(_next_url(request, student.get_absolute_url()))
+
+
+@require_POST
+def undo_last(request):
+    label = undo.undo(request, request.POST.get("id", ""))
+    if label:
+        messages.success(request, f"Undone: {label}")
+    else:
+        messages.error(request, "That can no longer be undone.")
+    return redirect(_next_url(request, reverse("tracker:dashboard")))
+
+
+# ---------- Class mode (student-facing: student prices only, no costs or other balances) ----------
+
+def _class_url(class_name):
+    return f"{reverse('tracker:class_mode')}?{urlencode({'class_name': class_name})}"
+
+
+def class_mode(request):
+    class_name = request.GET.get("class_name")
+    students = Student.objects.filter(is_sales_channel=False)
+    if class_name is None:
+        counts = dict(students.values_list("class_name").annotate(n=Count("id")))
+        classes = [(name, name, counts[name]) for name in ClassOrder.ordered_class_names() if name in counts]
+        if counts.get(""):
+            classes.append(("", NO_CLASS, counts[""]))
+        return render(request, "tracker/class_mode_index.html", {"classes": classes})
+    return render(request, "tracker/class_mode.html", {
+        "class_name": class_name,
+        "class_label": class_name or NO_CLASS,
+        "students": students.filter(class_name=class_name),
+    })
+
+
+def _quick_materials():
+    active = Material.objects.filter(is_active=True).select_related("category")
+    favourites = active.filter(is_favourite=True)
+    if favourites.exists():
+        return favourites
+    return active.annotate(n=Count("purchases")).order_by("-n", "name")[:12]
+
+
+def class_basket(request, pk):
+    student = get_object_or_404(Student.objects.with_balances(), pk=pk)
+    back = _class_url(student.class_name)
+    if request.method == "POST":
+        materials = {m.pk: m for m in Material.objects.filter(is_active=True)}
+        try:
+            when = date.fromisoformat(request.POST.get("purchase_date") or "")
+        except ValueError:
+            when = timezone.localdate()
+        project = Project.objects.filter(pk=request.POST.get("project") or None).first()
+        created = []
+        with transaction.atomic():
+            for key, value in request.POST.items():
+                if not key.startswith("qty_"):
+                    continue
+                try:
+                    material, quantity = materials.get(int(key[4:])), Decimal(value).quantize(Decimal("0.01"))
+                except (ValueError, InvalidOperation):
+                    continue
+                if material is None or quantity <= 0:
+                    continue
+                purchase = Purchase(student=student, material=material, quantity=quantity,
+                                    purchase_date=when, project=project)
+                purchase.set_price(reprice=True)
+                purchase.save()
+                created.append(purchase)
+        if created:
+            total = sum((p.total_cost for p in created), ZERO)
+            items = f"{len(created)} item{'s' if len(created) != 1 else ''}"
+            undo.remember(request, f"Added {items} (£{total}) for {student}.", created=created)
+        else:
+            messages.error(request, f"Nothing was added for {student} – the basket was empty.")
+        return redirect(back)
+    return render(request, "tracker/class_basket.html", {
+        "student": student,
+        "back": back,
+        "class_label": student.class_name or NO_CLASS,
+        "quick": _quick_materials(),
+        "projects": Project.objects.all(),
+        "today": timezone.localdate(),
+        "owed": -student.balance if student.balance < 0 else ZERO,
+    })
+
+
+def class_search(request):
+    words = request.GET.get("q", "").split()
+    materials = Material.objects.none()
+    if words:
+        materials = Material.objects.filter(is_active=True).select_related("category")
+        for word in words:
+            materials = materials.filter(Q(name__icontains=word) | Q(category__name__icontains=word))
+        materials = materials[:12]
+    return render(request, "tracker/partials/material_tiles.html", {"materials": materials, "searching": bool(words)})
+
+
+@require_POST
+def settle_up(request, pk):
+    student = get_object_or_404(Student.objects.with_balances(), pk=pk)
+    method = request.POST.get("method")
+    if method not in Payment.Method.values:
+        method = Payment.Method.CASH
+    if student.balance >= 0:
+        messages.error(request, f"{student} doesn't owe anything.")
+    else:
+        payment = Payment.objects.create(student=student, amount=-student.balance, payment_method=method,
+                                         notes="Settled up")
+        undo.remember(request, f"{student} paid £{payment.amount} by {method.lower()}.", created=[payment])
+    return redirect(_next_url(request, _class_url(student.class_name)))
 
 
 def payments_report(request):
@@ -223,6 +366,52 @@ def payments_report(request):
     context = {"form": form, "payments": payments, "totals": _method_totals(payments)}
     template = "tracker/partials/payments_table.html" if request.htmx else "tracker/payments_report.html"
     return render(request, template, context)
+
+
+def _profit_row(label, sales, cost, **extra):
+    sales, cost = sales or ZERO, cost or ZERO
+    profit = sales - cost
+    margin = (profit / sales * 100) if sales else None
+    return {"label": label, "sales": sales, "cost": cost, "profit": profit, "margin": margin, **extra}
+
+
+def profit_report(request):
+    """Private: what students paid for materials minus what those materials cost the studio."""
+    form = DateRangeForm(request.GET or None)
+    purchases = Purchase.objects.all()
+    if form.is_valid():
+        if form.cleaned_data["start"]:
+            purchases = purchases.filter(purchase_date__gte=form.cleaned_data["start"])
+        if form.cleaned_data["end"]:
+            purchases = purchases.filter(purchase_date__lte=form.cleaned_data["end"])
+    sums = {"sales": Sum("total_cost"), "cost": Sum("cost_total")}
+
+    total = purchases.aggregate(**sums)
+    by_month = [
+        _profit_row(r["month"], r["sales"], r["cost"])
+        for r in purchases.annotate(month=TruncMonth("purchase_date")).values("month").annotate(**sums).order_by("-month")
+    ]
+    by_class = sorted(
+        (_profit_row(
+            "Sales channels" if r["student__is_sales_channel"] else (r["student__class_name"] or NO_CLASS),
+            r["sales"], r["cost"])
+         for r in purchases.values("student__class_name", "student__is_sales_channel").annotate(**sums)),
+        key=lambda row: -row["profit"],
+    )
+    by_material = sorted(
+        (_profit_row(r["material__name"], r["sales"], r["cost"], quantity=r["quantity"], unit=r["material__unit_type"])
+         for r in purchases.values("material__name", "material__unit_type").annotate(quantity=Sum("quantity"), **sums)),
+        key=lambda row: -row["profit"],
+    )
+    return render(request, "tracker/profit_report.html", {
+        "form": form,
+        "total": _profit_row("Total", total["sales"], total["cost"]),
+        "by_month": by_month,
+        "by_class": by_class,
+        "by_material": by_material,
+        "n_estimated": purchases.filter(cost_is_estimate=True).count(),
+        "n_purchases": purchases.count(),
+    })
 
 
 def material_list(request):

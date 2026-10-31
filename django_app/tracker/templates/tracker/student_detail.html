@@ -18,6 +18,8 @@
   <div class="btn-row">
     <a role="button" href="{% url 'tracker:purchase_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record purchase</a>
     <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record payment</a>
+    <a role="button" class="ghost" href="{% url 'tracker:student_statement' student.pk %}">Statement</a>
+    {% if statement.owed and statement.mailto %}<a role="button" class="ghost" href="{{ statement.mailto }}">Email balance</a>{% endif %}
   </div>
 </div>
 
