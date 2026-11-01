@@ -54,17 +54,16 @@
 
 <div class="btn-row no-print statement-actions">
   <button type="button" onclick="window.print()">Print</button>
-  {% if statement.owed and statement.mailto %}<a role="button" class="ghost" href="{{ statement.mailto }}">Email balance</a>{% endif %}
+  {% if statement.mailto %}<a role="button" class="ghost" href="{{ statement.mailto }}">Email statement</a>
+  {% else %}<button class="ghost" disabled title="No email address">Email statement</button>{% endif %}
 </div>
 
-{% if statement.owed %}
 <section class="panel no-print">
   <header><h3>Email message</h3>{% if not student.email %}<a href="{% url 'tracker:student_edit' student.pk %}">Add an email address</a>{% endif %}</header>
   <div class="body">
-    <p class="lede">“Email balance” opens this in your mail app ready to send. If that doesn't work, copy it into any email.</p>
+    <p class="lede">“Email statement” opens this in your mail app ready to send. If that doesn't work, copy it into any email.</p>
     <textarea readonly rows="12" id="email-text" onclick="this.select()">{{ statement.email_body }}</textarea>
     <button type="button" class="small ghost" onclick="const t=document.getElementById('email-text');t.select();document.execCommand('copy');this.textContent='Copied ✓'">Copy message</button>
   </div>
 </section>
-{% endif %}
 {% endblock %}

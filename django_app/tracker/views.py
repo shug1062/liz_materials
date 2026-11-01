@@ -136,8 +136,9 @@ def student_list(request):
     if selected:
         students = students.filter(class_name=selected)
     groups = {}
-    for s in students:
+    for s in statements.with_history(students):
         s.back_url = _class_students_url(s.class_name)
+        s.statement = statements.statement_for(s)
         groups.setdefault(s.class_name or NO_CLASS, []).append(s)
     order = StudioClass.ordered_class_names() + [NO_CLASS]
     grouped = []
@@ -1160,7 +1161,8 @@ def _with_carried_debt(students, class_name):
     """Attach .carried: what each student still owes from other classes or earlier terms."""
     students = list(statements.with_history(students))
     for s in students:
-        s.carried = statements.statement_for(s).owed_from_other_classes(class_name)
+        s.statement = statements.statement_for(s)
+        s.carried = s.statement.owed_from_other_classes(class_name)
     return students
 
 

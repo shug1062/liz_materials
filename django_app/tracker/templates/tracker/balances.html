@@ -21,7 +21,7 @@
         <td class="covers-cell">{% for item in st.items|slice:":3" %}{{ item.label }}{% if not forloop.last %}; {% endif %}{% endfor %}{% if st.items|length > 3 %} <span class="unit">+{{ st.items|length|add:"-3" }} more</span>{% endif %}</td>
         <td>
           <div class="actions">
-            {% if st.mailto %}<a class="small" role="button" href="{{ st.mailto }}">Email</a>
+            {% if st.student.email %}<a class="small" role="button" href="{{ st.mailto }}">Email</a>
             {% else %}<a class="small ghost" role="button" href="{% url 'tracker:student_edit' st.student.pk %}">Add email</a>{% endif %}
             <a class="small ghost" role="button" href="{% url 'tracker:student_statement' st.student.pk %}">Statement</a>
           </div>

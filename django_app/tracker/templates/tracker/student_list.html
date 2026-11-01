@@ -40,6 +40,8 @@
           <div class="actions">
             <a class="small" role="button" href="{% url 'tracker:purchase_new' %}?student={{ s.pk }}&class_name={{ s.class_name|urlencode }}&next={{ s.back_url|urlencode }}">Purchase</a>
             <a class="small ghost" role="button" href="{% url 'tracker:payment_new' %}?student={{ s.pk }}&class_name={{ s.class_name|urlencode }}&next={{ s.back_url|urlencode }}">Payment</a>
+            {% if s.statement.mailto %}<a class="small ghost" role="button" href="{{ s.statement.mailto }}">Email statement</a>
+            {% else %}<button class="small ghost" disabled title="No email address">Email statement</button>{% endif %}
           </div>
         </td>
       </tr>

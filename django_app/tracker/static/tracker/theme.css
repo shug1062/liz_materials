@@ -144,8 +144,8 @@ tr.inactive td.name { text-decoration: line-through; }
 .sub-text { display: block; font-size: .8rem; font-weight: 300; color: var(--muted); }
 .unit { font-size: .8rem; font-weight: 300; color: var(--muted); }
 .students-table { table-layout: fixed; }
-.students-table th:nth-child(1) { width: 32%; }
-.students-table th:nth-child(2), .students-table th:nth-child(3), .students-table th:nth-child(4) { width: 15%; }
+.students-table th:nth-child(1) { width: 25%; }
+.students-table th:nth-child(2), .students-table th:nth-child(3), .students-table th:nth-child(4) { width: 13%; }
 .materials-table { table-layout: fixed; min-width: 860px; }
 .materials-table th:nth-child(1) { width: 30%; }
 .materials-table th:nth-child(2) { width: 13%; }
@@ -201,6 +201,7 @@ tr.inactive td.name { text-decoration: line-through; }
 button, [role=button], input[type=submit] { font-family: var(--sans); font-weight: 400; letter-spacing: .06em; border-radius: 999px; padding-left: 1.3rem; padding-right: 1.3rem; }
 .btn-row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
 .btn-row > *, .actions > * { margin: 0; }
+.actions > * { white-space: nowrap; }
 .actions { display: flex; gap: .4rem; justify-content: flex-end; }
 button.small, a.small[role=button] { padding: .28rem .85rem; font-size: .8rem; }
 .ghost { background: var(--paper) !important; border: 1px solid #d3d8db !important; color: var(--slate) !important; }

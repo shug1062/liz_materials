@@ -29,6 +29,8 @@
           <td><a href="{{ s.get_absolute_url }}"><strong>{{ s.name }}</strong></a>{% if s.email %}<span class="sub-text">{{ s.email }}</span>{% endif %}</td>
           <td class="num">{% include "tracker/partials/balance_text.html" with b=s.balance %}
             {% for name, amount in s.carried %}<span class="sub-text">incl. {{ amount|gbp }} from {{ name }}</span>{% endfor %}</td>
+          <td>{% if s.statement.mailto %}<a class="small ghost" role="button" href="{{ s.statement.mailto }}">Email statement</a>
+            {% else %}<button class="small ghost" disabled title="No email address">Email statement</button>{% endif %}</td>
         </tr>
       {% empty %}
         <tr><td class="empty">Nobody yet – add students from the list.</td></tr>

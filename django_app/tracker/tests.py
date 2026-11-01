@@ -834,17 +834,31 @@ class StatementTests(TestCase):
         self.assertNotIn("£0.12", body)
         self.assertTrue(st.mailto().startswith("mailto:amy@example.com?subject=Your%20materials%20balance"))
 
-    def test_no_email_button_without_address_or_debt(self):
-        self.assertEqual(statements.statement_for(self.amy).owed, Decimal("0"))
+    def test_no_email_link_without_address(self):
         self.amy.email = ""
         self.amy.save()
-        self.buy(self.rings, "1", date(2026, 9, 1))
         self.assertEqual(statements.statement_for(self.amy).mailto(), "")
 
     def test_credit_is_reported(self):
         Payment.objects.create(student=self.amy, amount=Decimal("5"))
         st = statements.statement_for(self.amy)
         self.assertEqual((st.owed, st.credit, st.items), (Decimal("0"), Decimal("5"), []))
+        self.assertIn("£5.00 in credit", st.email_body())
+        self.assertNotIn("pay by cash", st.email_body())
+
+    def test_zero_balance_email(self):
+        body = statements.statement_for(self.amy).email_body()
+        self.assertIn("£0.00, so you're all paid up", body)
+        self.assertNotIn("pay by cash", body)
+
+    def test_email_statement_on_students_and_class_pages(self):
+        studio_class = StudioClass.objects.get(name="Tue")
+        Student.objects.create(name="No email", class_name="Tue")
+        for url in [reverse("tracker:student_list"), reverse("tracker:class_detail", args=[studio_class.pk])]:
+            response = self.client.get(url)
+            self.assertContains(response, "Email statement", count=2)
+            self.assertContains(response, "mailto:amy@example.com?subject=")
+            self.assertContains(response, 'disabled title="No email address">Email statement', count=1)
 
     def test_statement_and_balances_pages(self):
         self.buy(self.sheet, "2", date(2026, 10, 1))

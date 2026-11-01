@@ -29,17 +29,19 @@ class Statement:
         return f"Your materials balance with {settings.STUDIO_NAME}"
 
     def email_body(self) -> str:
-        lines = [
-            f"Hi {self.first_name},",
-            "",
-            f"Just a quick note that your balance for materials is £{self.owed:,.2f}.",
-        ]
-        if self.items:
-            lines += ["", "This covers:"]
-            lines += [f"- {describe(item)}" for item in self.items]
+        lines = [f"Hi {self.first_name},", ""]
+        if self.owed:
+            lines.append(f"Just a quick note that your balance for materials is £{self.owed:,.2f}.")
+            if self.items:
+                lines += ["", "This covers:"]
+                lines += [f"- {describe(item)}" for item in self.items]
+            lines += ["", "You can pay by cash at your next class."]
+        elif self.credit:
+            lines.append(f"Just a quick note that you're £{self.credit:,.2f} in credit for materials, "
+                         "so there's nothing to pay.")
+        else:
+            lines.append("Just a quick note that your materials balance is £0.00, so you're all paid up.")
         lines += [
-            "",
-            "You can pay by cash or card at your next class.",
             "",
             "Thank you,",
             settings.STUDIO_SIGNOFF,

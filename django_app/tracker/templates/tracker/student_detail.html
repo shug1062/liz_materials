@@ -20,7 +20,8 @@
     <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record payment</a>
     <a role="button" class="ghost" href="{% url 'tracker:sale_new' %}?student={{ student.pk }}&next={{ request.path|urlencode }}">Record a sale</a>
     <a role="button" class="ghost" href="{% url 'tracker:student_statement' student.pk %}">Statement</a>
-    {% if statement.owed and statement.mailto %}<a role="button" class="ghost" href="{{ statement.mailto }}">Email balance</a>{% endif %}
+    {% if statement.mailto %}<a role="button" class="ghost" href="{{ statement.mailto }}">Email statement</a>
+    {% else %}<button class="ghost" disabled title="No email address">Email statement</button>{% endif %}
   </div>
 </div>
 
