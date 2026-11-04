@@ -65,7 +65,6 @@
 {% endif %}
 
 <h2 class="section-title">Classes</h2>
-<p class="lede">Tap a class to open it in class mode – safe for students to see.</p>
 <div class="chips">
   {% for name, count in classes %}
     <a class="chip" href="{% url 'tracker:class_mode' %}?class_name={{ name|urlencode }}">{{ name }} <span class="count">{{ count }}</span></a>

@@ -1,14 +1,6 @@
 {% extends "base.html" %}
-{% block brand_href %}{% if in_class %}{{ next }}{% else %}{{ block.super }}{% endif %}{% endblock %}
-{% block mode_switch %}{% if in_class %}<a role="button" class="mode-switch liz" href="{% url 'tracker:dashboard' %}">Switch to Liz mode</a>{% else %}{{ block.super }}{% endif %}{% endblock %}
-{% block nav %}{% if in_class %}
-<nav class="site-nav class-nav" aria-label="Class mode">
-  <span class="class-mode-label"><span class="gem"></span>Class mode · {{ class_label }}</span>
-  <span class="spacer"></span>
-  <a href="{{ next }}">Back to class</a>
-</nav>
-{% else %}{{ block.super }}{% endif %}{% endblock %}
 {% block content %}
+{% if in_class %}<a class="crumb" href="{{ next }}">Back to {{ class_label }}</a>{% endif %}
 <section class="panel form-card">
   <header><h3>{{ title }}</h3></header>
   <form method="post">

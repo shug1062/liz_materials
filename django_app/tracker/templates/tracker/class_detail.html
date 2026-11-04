@@ -14,7 +14,7 @@
     <a role="button" class="ghost" href="{% url 'tracker:class_charge' studio_class.pk %}">Charge course fee</a>
     <a role="button" class="ghost" href="{% url 'tracker:class_next_term' studio_class.pk %}">Copy for next term</a>
     <a role="button" class="ghost" href="{% url 'tracker:class_day' studio_class.pk %}">Class summary</a>
-    <a role="button" href="{% url 'tracker:class_mode' %}?class_name={{ studio_class.name|urlencode }}">Class mode</a>
+    <a role="button" href="{% url 'tracker:class_mode' %}?class_name={{ studio_class.name|urlencode }}">Class register</a>
   </div>
 </div>
 

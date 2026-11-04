@@ -24,7 +24,7 @@
     <span class="badge">{{ group.students|length }} student{{ group.students|length|pluralize }}</span>
     {% if group.owed %}<span class="meta owes">Owed {{ group.owed|gbp }}</span>{% endif %}
     {% if group.credit %}<span class="meta credit">Credit {{ group.credit|gbp }}</span>{% endif %}
-    <a class="small ghost summary-action" role="button" href="{% url 'tracker:class_mode' %}?class_name={% if group.name != no_class %}{{ group.name|urlencode }}{% endif %}">Class mode</a>
+    <a class="small ghost summary-action" role="button" href="{% url 'tracker:class_mode' %}?class_name={% if group.name != no_class %}{{ group.name|urlencode }}{% endif %}">Class register</a>
   </summary>
   <figure>
   <table class="students-table">

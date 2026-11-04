@@ -1,14 +1,6 @@
 {% extends "base.html" %}
-{% block brand_href %}{% url 'tracker:class_mode' %}?class_name={{ class_name|urlencode }}{% endblock %}
-{% block mode_switch %}<a role="button" class="mode-switch liz" href="{% url 'tracker:dashboard' %}">Switch to Liz mode</a>{% endblock %}
-{% block nav %}
-<nav class="site-nav class-nav" aria-label="Class mode">
-  <span class="class-mode-label"><span class="gem"></span>Class mode · {{ class_label }}</span>
-  <span class="spacer"></span>
-  <a href="{% url 'tracker:class_mode' %}">Other classes</a>
-</nav>
-{% endblock %}
 {% block content %}
+<a class="crumb" href="{% url 'tracker:home' %}">Other classes</a>
 <div class="page-head">
   <div>
     <p class="eyebrow">Tap a name to add materials</p>

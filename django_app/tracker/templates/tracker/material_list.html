@@ -17,11 +17,10 @@
   </div>
 </div>
 
-{% regroup materials by category as by_category %}
-{% if by_category|length > 1 %}
+{% if sections|length > 1 %}
 <nav class="chips category-nav" aria-label="Jump to category">
-  {% for group in by_category %}
-  <a class="chip capitalise" href="#cat-{{ group.grouper.pk|default:'none' }}">{{ group.grouper|default:"Uncategorised" }} <span class="count">{{ group.list|length }}</span></a>
+  {% for group in sections %}
+  <a class="chip capitalise" href="#{{ group.anchor }}">{{ group.name }} <span class="count">{{ group.materials|length }}</span></a>
   {% endfor %}
   {% if recent_changes %}<a class="chip" href="#recent-changes">Recent price changes</a>{% endif %}
 </nav>
@@ -51,9 +50,12 @@
 </details>
 {% endif %}
 
-{% for group in by_category %}
-<section class="panel category-section" id="cat-{{ group.grouper.pk|default:'none' }}">
-  <header><h3 class="capitalise">{{ group.grouper|default:"Uncategorised" }}</h3><span class="badge">{{ group.list|length }}</span></header>
+{% for group in sections %}
+<section class="panel category-section{% if group.quick %} quick-section{% endif %}" id="{{ group.anchor }}">
+  <header><h3 class="capitalise">{{ group.name }}</h3><span class="badge">{{ group.materials|length }}</span></header>
+  {% if group.quick and not group.materials %}
+  <div class="body empty">Nothing ticked yet, so student pages show the 12 most-bought materials. Press “+ Quick add” on any material below to choose your own.</div>
+  {% else %}
   <figure>
   <table class="materials-table">
     <thead>
@@ -61,7 +63,7 @@
           <th class="num">Markup</th><th class="num">Student price</th><th>Supplier</th><th></th></tr>
     </thead>
     <tbody>
-    {% for m in group.list %}
+    {% for m in group.materials %}
       <tr {% if not m.is_active %}class="inactive"{% endif %}>
         <td class="name"><strong>{{ m.name }}</strong>{% if m.pack_quantity > 1 %}<span class="sub-text">Pack of {{ m.pack_quantity|floatformat:"-3" }}</span>{% elif m.weight_per_unit %}<span class="sub-text">{{ m.weight_per_unit|floatformat:"-4" }}g each</span>{% endif %}</td>
         <td><span class="badge {{ m.pricing_type }}">{% if m.pricing_type == "per_gram" %}Per gram{% elif m.pricing_type == "per_gram_item" %}By weight{% else %}Fixed{% endif %}</span>{% if not m.is_active %} <span class="badge inactive">Inactive</span>{% endif %}{% if m.is_favourite %} <span class="badge quick">Quick</span>{% endif %}{% if m.is_silver %} <span class="badge silver">Silver</span>{% endif %}{% if m.kind != "material" %} <span class="badge {{ m.kind }}">{% if m.kind == "lesson" %}Lesson fee{% else %}Order at cost{% endif %}</span>{% endif %}{% if m.margin_flags %} <span class="badge thin" title="{{ m.margin_flags|join:' ' }}">Thin margin</span>{% endif %}</td>
@@ -72,6 +74,7 @@
         <td class="nowrap">{% if m.supplier_url %}<a href="{{ m.supplier_url }}" target="_blank" rel="noopener noreferrer" title="Open the supplier's product page">{{ m.supplier|default:"Link" }} ↗</a>{% elif m.supplier %}<span title="No supplier link saved – edit to add one">{{ m.supplier }}</span>{% else %}–{% endif %}</td>
         <td>
           <div class="actions">
+            <form method="post" action="{% url 'tracker:material_quick' m.pk %}" class="inline">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}#{{ group.anchor }}"><button class="small {% if m.is_favourite %}quick-on{% else %}ghost{% endif %}" aria-pressed="{% if m.is_favourite %}true{% else %}false{% endif %}" title="Show this material in Quick add on student pages">{% if m.is_favourite %}✓ Quick add{% else %}+ Quick add{% endif %}</button></form>
             <a class="small ghost" role="button" href="{% url 'tracker:material_edit' m.pk %}">Edit</a>
             <details class="menu">
               <summary class="small ghost" role="button" aria-label="More actions for {{ m.name }}">…</summary>
@@ -90,6 +93,7 @@
     </tbody>
   </table>
   </figure>
+  {% endif %}
 </section>
 {% empty %}
 <div class="panel"><div class="body empty">No materials yet.</div></div>

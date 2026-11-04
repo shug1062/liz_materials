@@ -1,5 +1,24 @@
 # The Silver Bird · Studio (Django app)
 
+## Navigation and Quick add
+
+The app uses one shared menu. The home page is the class register: choose a
+class, then a student to add materials, record payments and see all their past
+purchases, newest first. The financial overview is under **Dashboard** at
+`/dashboard/`, not the home page. Reports and material costs are accessible from
+the shared menu; there is no separate student-facing mode.
+
+To change Quick add items:
+
+1. Open **Materials** and click **Edit** beside a material.
+2. Tick **Show in Quick add** to include it, or untick it to remove it.
+3. Keep **Show in purchase list** ticked and save the material.
+
+When any active materials are ticked, Quick add shows those materials. If none
+are ticked, it automatically shows up to 12 active materials ranked by purchase
+count (alphabetically for ties). Edit the same material to change its name,
+price or unit; previous purchase prices remain unchanged.
+
 ## Running on Windows
 
 These steps assume Python 3.10 or newer is already installed.

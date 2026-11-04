@@ -6,7 +6,8 @@ from . import views
 app_name = "tracker"
 
 urlpatterns = [
-    path("", views.dashboard, name="dashboard"),
+    path("", views.class_mode, name="home"),
+    path("dashboard/", views.dashboard, name="dashboard"),
     path("settings/", views.settings_page, name="settings"),
     path("profit/", RedirectView.as_view(pattern_name="tracker:reports", query_string=True)),
     path("students/", views.student_list, name="student_list"),
@@ -36,6 +37,7 @@ urlpatterns = [
     path("materials/add/", views.material_form, name="material_add"),
     path("materials/<int:pk>/edit/", views.material_form, name="material_edit"),
     path("materials/<int:pk>/toggle/", views.material_toggle, name="material_toggle"),
+    path("materials/<int:pk>/quick/", views.material_quick, name="material_quick"),
     path("materials/<int:pk>/delete/", views.material_delete, name="material_delete"),
     path("materials/price-calc/", views.material_price_calc, name="material_price_calc"),
     path("materials/fetch/", views.material_fetch, name="material_fetch"),

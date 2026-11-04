@@ -1,14 +1,5 @@
 {% extends "base.html" %}
 {% load money %}
-{% block brand_href %}{{ back }}{% endblock %}
-{% block mode_switch %}<a role="button" class="mode-switch liz" href="{% url 'tracker:dashboard' %}">Switch to Liz mode</a>{% endblock %}
-{% block nav %}
-<nav class="site-nav class-nav" aria-label="Class mode">
-  <span class="class-mode-label"><span class="gem"></span>Class mode · {{ class_label }}</span>
-  <span class="spacer"></span>
-  <a href="{{ back }}">Back to class</a>
-</nav>
-{% endblock %}
 {% block content %}
 <a class="crumb" href="{{ back }}">← {{ class_label }}</a>
 <div class="page-head">
@@ -82,6 +73,14 @@
       <button type="submit">Save payment</button>
     </div>
   </form>
+</section>
+
+<section id="purchase-history">
+  <div class="page-head">
+    <h2>Past purchases</h2>
+    <a role="button" class="small ghost" href="{{ student.get_absolute_url }}">Student details</a>
+  </div>
+  {% include "tracker/partials/purchase_table.html" %}
 </section>
 
 <template id="basket-line">

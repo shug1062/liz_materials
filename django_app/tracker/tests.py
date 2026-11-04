@@ -546,6 +546,29 @@ class MaterialManagementTests(TestCase):
         self.material.refresh_from_db()
         self.assertFalse(self.material.is_active)
 
+    def test_quick_add_toggle_on_materials_list(self):
+        self.assertContains(self.client.get(reverse("tracker:material_list")), "+ Quick add")
+        url = reverse("tracker:material_quick", args=[self.material.pk])
+        self.client.post(url)
+        self.material.refresh_from_db()
+        self.assertTrue(self.material.is_favourite)
+        self.assertContains(self.client.get(reverse("tracker:material_list")), "✓ Quick add")
+        self.client.post(url)
+        self.material.refresh_from_db()
+        self.assertFalse(self.material.is_favourite)
+        self.assertEqual(self.client.get(url).status_code, 405)
+
+    def test_quick_add_section_lists_ticked_materials_first(self):
+        page = self.client.get(reverse("tracker:material_list"))
+        quick = page.context["sections"][0]
+        self.assertEqual((quick["name"], quick["materials"]), ("Quick add", []))
+        self.assertContains(page, "Nothing ticked yet")
+        self.material.is_favourite = True
+        self.material.save()
+        sections = self.client.get(reverse("tracker:material_list")).context["sections"]
+        self.assertEqual(sections[0]["materials"], [self.material])
+        self.assertIn(self.material, sections[1]["materials"])
+
     def test_reordering(self):
         rings = Category.objects.create(name="Rings", sort_order=5)
         self.client.post(reverse("tracker:category_order"), {"category": [rings.pk, self.findings.pk]})
@@ -646,12 +669,40 @@ class ClassModeTests(TestCase):
         self.assertContains(self.client.get(reverse("tracker:class_mode"), {"class_name": "Tue pm"}), "Anne")
         self.assertEqual(self.client.get(self.basket_url).status_code, 200)
 
-    def test_mode_switch_in_header(self):
-        self.assertContains(self.client.get(reverse("tracker:dashboard")), "Switch to class mode")
-        for url in [reverse("tracker:class_mode"), self.basket_url]:
+    def test_unified_navigation_and_class_landing_page(self):
+        home = self.client.get(reverse("tracker:home"))
+        self.assertEqual(reverse("tracker:home"), "/")
+        self.assertEqual(reverse("tracker:dashboard"), "/dashboard/")
+        self.assertTemplateUsed(home, "tracker/class_mode_index.html")
+        self.assertContains(home, "Choose a class")
+        for url in [reverse("tracker:home"), reverse("tracker:dashboard"),
+                    reverse("tracker:class_mode"), self.basket_url,
+                    reverse("tracker:sale_new") + "?class_name=Tue+pm"]:
             page = self.client.get(url)
-            self.assertContains(page, "Switch to Liz mode")
+            self.assertContains(page, 'aria-label="Main"')
+            self.assertContains(page, 'href="/dashboard/"')
+            self.assertContains(page, 'href="/materials/"')
+            self.assertNotContains(page, "Switch to Liz mode")
             self.assertNotContains(page, "Switch to class mode")
+
+    def test_basket_shows_all_past_purchases_newest_first(self):
+        self.rings.is_active = False
+        self.rings.save()
+        older = Purchase.objects.create(student=self.anne, material=self.rings, quantity=Decimal("3"),
+                                        unit_price=Decimal("0.12"), total_cost=Decimal("0.36"),
+                                        purchase_date=date(2025, 1, 7), class_name="Previous term", notes="Old ring purchase")
+        newer = Purchase.objects.create(student=self.anne, material=self.sheet, quantity=Decimal("2"),
+                                        unit_price=Decimal("3"), total_cost=Decimal("6"),
+                                        purchase_date=date(2026, 10, 31), notes="Recent sheet purchase")
+        other = Student.objects.create(name="Other student", class_name="Tue pm")
+        Purchase.objects.create(student=other, material=self.sheet, quantity=Decimal("1"),
+                                unit_price=Decimal("3"), total_cost=Decimal("3"), notes="Someone else's purchase")
+        page = self.client.get(self.basket_url)
+        self.assertEqual(list(page.context["purchases"]), [newer, older])
+        self.assertContains(page, "Past purchases")
+        self.assertContains(page, "Old ring purchase")
+        self.assertContains(page, "Recent sheet purchase")
+        self.assertNotContains(page, "Someone else's purchase")
 
     def test_basket_saves_every_line_and_returns_to_class(self):
         response = self.client.post(self.basket_url, {
@@ -667,15 +718,14 @@ class ClassModeTests(TestCase):
         self.client.post(self.basket_url, {f"qty_{self.rings.pk}": "0", f"qty_{self.sheet.pk}": "2", "qty_x": "1"})
         self.assertFalse(Purchase.objects.exists())
 
-    def test_class_screens_hide_costs_and_admin_menu(self):
+    def test_class_screens_hide_supplier_costs(self):
         Student.objects.create(name="Karen", class_name="Tue pm")
         Payment.objects.create(student=self.anne, amount=Decimal("1"))
         for url in [self.basket_url, reverse("tracker:class_mode") + "?class_name=Tue+pm",
                     reverse("tracker:class_search") + "?q=sheet"]:
             with self.subTest(url=url):
                 html = self.client.get(url).content.decode()
-                for secret in ["markup", "Markup", "£5.00", "£2.50", "Supplier", 'href="/payments/"', 'href="/materials/"',
-                               'href="/reports/"', "Reports", "Profit"]:
+                for secret in ["markup", "Markup", "£5.00", "£2.50", "Supplier", "Profit"]:
                     self.assertNotIn(secret, html)
         self.assertContains(self.client.get(self.basket_url), "£3.00")  # student price per gram
 
@@ -1050,7 +1100,7 @@ class SaleTests(TestCase):
     def test_class_mode_sale_defaults_to_the_class_and_returns_there(self):
         page = self.client.get(reverse("tracker:sale_new"), {"class_name": "Tue"})
         self.assertEqual(page.context["form"]["where"].value(), "Tue")
-        self.assertContains(page, "Class mode · Tue")
+        self.assertContains(page, "Back to Tue")
         self.assertEqual(list(page.context["form"].fields["student"].queryset), [self.amy])
         response = self.client.post(f"{reverse('tracker:sale_new')}?class_name=Tue", {
             "sale_type": "materials", "amount": "3.50", "payment_method": "Cash", "sale_date": "2026-04-12",
@@ -1587,7 +1637,10 @@ class CourseFeeTests(TestCase):
         reports_page = self.client.get(reverse("tracker:reports")).context
         self.assertEqual((reports_page["lesson_fees"], reports_page["total"]["sales"]), (Decimal("360.00"), Decimal("0")))
         self.assertEqual(statements.statement_for(self.ben).items[0]["label"], "Course fee – Autumn term × 1")
-        self.assertNotContains(self.client.get(reverse("tracker:class_basket", args=[self.ben.pk])), "Course fee")
+        basket = self.client.get(reverse("tracker:class_basket", args=[self.ben.pk]))
+        self.assertContains(basket, "Course fee")
+        self.assertNotIn(fee.material, basket.context["quick"])
+        self.assertIn(fee, basket.context["purchases"])
 
         self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
         self.assertFalse(Purchase.objects.exists())

@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
+from itertools import groupby
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -592,6 +593,7 @@ def class_basket(request, pk):
         "back": back,
         "class_label": student.class_name or NO_CLASS,
         "quick": _quick_materials(),
+        "purchases": student.purchases.select_related("material", "project").order_by("-purchase_date", "-pk"),
         "projects": Project.objects.all(),
         "today": timezone.localdate(),
         "methods": Payment.Method.choices,
@@ -772,8 +774,14 @@ def material_list(request):
     for m in materials:
         m.margin_flags = flags.get(m.pk, [])
         m.low_markup = bool(m.margin_flags) and not m.markup_ok and margins.margin_percent(m.markup_percentage) < threshold
+    sections = [{"name": "Quick add", "anchor": "cat-quick", "quick": True,
+                 "materials": [m for m in materials if m.is_favourite]}] if materials else []
+    for category, members in groupby(materials, key=lambda m: m.category):
+        sections.append({"name": category or "Uncategorised", "anchor": f"cat-{category.pk if category else 'none'}",
+                         "materials": list(members)})
     return render(request, "tracker/material_list.html", {
         "materials": materials,
+        "sections": sections,
         "flagged": [m for m in materials if m.margin_flags],
         "n_low_markup": sum(m.low_markup for m in materials),
         "thin_margin": settings.THIN_MARGIN_PERCENT,
@@ -894,6 +902,16 @@ def material_toggle(request, pk):
     material.save(update_fields=["is_active", "last_updated"])
     state = "shown in" if material.is_active else "hidden from"
     messages.success(request, f"{material.name} is now {state} the purchase list.")
+    return redirect(_next_url(request, reverse("tracker:material_list")))
+
+
+@require_POST
+def material_quick(request, pk):
+    material = get_object_or_404(Material, pk=pk)
+    material.is_favourite = not material.is_favourite
+    material.save(update_fields=["is_favourite", "last_updated"])
+    state = "added to" if material.is_favourite else "removed from"
+    messages.success(request, f"{material.name} {state} Quick add.")
     return redirect(_next_url(request, reverse("tracker:material_list")))
 
 

@@ -130,6 +130,8 @@ a:hover { text-decoration: underline; }
 .panel > header h3 { margin: 0; font-size: 1.3rem; }
 .panel > .body { padding: 1.35rem; }
 .panel figure, details.group figure { margin: 0; overflow-x: auto; }
+#purchase-history { margin-top: 1.5rem; }
+#purchase-history figure { margin: 0; max-width: 100%; overflow-x: auto; }
 .panel table, details.group table { margin: 0; }
 table { font-size: .95rem; }
 th, td { padding: .75rem 1.1rem; vertical-align: middle; background-color: transparent; border-bottom: 1px solid var(--line); }
@@ -146,11 +148,11 @@ tr.inactive td.name { text-decoration: line-through; }
 .students-table { table-layout: fixed; }
 .students-table th:nth-child(1) { width: 25%; }
 .students-table th:nth-child(2), .students-table th:nth-child(3), .students-table th:nth-child(4) { width: 13%; }
-.materials-table { table-layout: fixed; min-width: 860px; }
-.materials-table th:nth-child(1) { width: 30%; }
+.materials-table { table-layout: fixed; min-width: 64rem; }
+.materials-table th:nth-child(1) { width: 24%; }
 .materials-table th:nth-child(2) { width: 13%; }
 .materials-table th:nth-child(7) { width: 13%; }
-.materials-table th:nth-child(8) { width: 8%; }
+.materials-table th:nth-child(8) { width: 16rem; }
 .capitalise::first-letter { text-transform: uppercase; }
 
 /* Badges & money */
@@ -414,6 +416,9 @@ details.more summary { font-size: .9rem; color: var(--muted); }
 .settle-label { font-size: .95rem; }
 .settle-label strong { font-family: var(--serif); font-size: 1.4rem; color: var(--ruby); }
 .badge.quick { background: var(--steel-wash); color: var(--sapphire); }
+button.quick-on { background: var(--sapphire); border-color: var(--sapphire); color: #fff; }
+.quick-section { border-color: var(--steel-light); }
+.quick-section > header { background: var(--steel-wash); }
 .checkbox-row.tight { margin-top: .5rem; }
 details.group > summary .summary-action { margin: 0 0 0 auto; }
 details.group > summary:has(.summary-action)::after { margin-left: .5rem; }
