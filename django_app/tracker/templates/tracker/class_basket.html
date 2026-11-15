@@ -62,14 +62,7 @@
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ back }}">
     <div class="body">
-      <div class="grid">
-        <label>Amount (£) <input type="text" name="amount" inputmode="decimal" autocomplete="off" required></label>
-        <label>Method
-          <select name="payment_method">{% for value, label in methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
-        </label>
-        <label>Date <input type="date" name="payment_date" value="{{ today|date:'Y-m-d' }}"></label>
-      </div>
-      <label>Notes <input type="text" name="notes" autocomplete="off"></label>
+      {% include "tracker/partials/payment_fields.html" with form=payment_form %}
     </div>
     <div class="form-actions">
       <button type="submit">Save payment</button>

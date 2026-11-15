@@ -1,5 +1,7 @@
 # The Silver Bird · Studio (Django app)
 
+See the [page connection map](PAGE_MAP.md) for Mermaid diagrams of the app's navigation.
+
 ## Navigation and Quick add
 
 The app uses one shared menu. The home page is the class register: choose a
@@ -14,16 +16,25 @@ Quick add, material search, multiple items, payments and purchase history.
 An optional **Purchase note** is saved on every item added in that basket;
 payment notes remain separate. Save and Cancel return to the originating
 student/class view. Existing purchases still use the individual edit form.
+The main menu and Dashboard **Record purchase** links first ask you to choose
+a student, then open this same basket. Saving or cancelling returns to the
+chooser unless the link supplied another return destination.
 
 **Pay cash** and **Pay card** open the payment form with the student and chosen
 method selected, but no amount filled in. Both buttons remain available when
 the student is settled or already in credit, for advance payments.
 Enter the amount actually received and press **Save payment**.
-The payment form's **£5**, **£10** and **£20** shortcuts fill the amount without
+The payment form's **£5**, **£10** and **£20–£100** (in £10 steps) shortcuts fill the amount without
 saving it; you can still change the amount before confirming.
 Partial payments, full payments and overpayments are supported; overpayments
 remain as account credit. Cancel records nothing. The basket's payment amount
 also starts blank rather than assuming the outstanding balance.
+The basket and standalone payment pages use the same payment-field component,
+Django form and amount-shortcut script, including the same evenly sized buttons.
+The basket fixes the student to the account being viewed; the standalone form
+allows choosing a student. Each keeps its existing save/return and Undo behavior.
+Both require a positive amount, a valid method and a date. The date starts at
+today; clearing it is a validation error rather than silently choosing today.
 
 To change Quick add items:
 

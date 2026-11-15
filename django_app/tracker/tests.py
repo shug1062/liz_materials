@@ -115,7 +115,7 @@ class ViewTests(TestCase):
         self.material = make_material(category=Category.objects.create(name="Findings"))
 
     def test_no_number_inputs_that_trackpad_scrolling_can_change(self):
-        urls = [reverse("tracker:purchase_new"), reverse("tracker:payment_new"), reverse("tracker:material_add"),
+        urls = [reverse("tracker:payment_new"), reverse("tracker:material_add"),
                 reverse("tracker:material_edit", args=[self.material.pk]), reverse("tracker:price_history"),
                 reverse("tracker:class_basket", args=[self.student.pk])]
         for url in urls:
@@ -210,8 +210,8 @@ class ViewTests(TestCase):
         self.assertContains(response, "Daily backup failed: OneDrive is unavailable")
 
     def test_record_purchase_locks_in_price(self):
-        response = self.client.post(reverse("tracker:purchase_new"), {
-            "student": self.student.pk, "material": self.material.pk, "quantity": "10",
+        response = self.client.post(reverse("tracker:class_basket", args=[self.student.pk]), {
+            f"qty_{self.material.pk}": "10", "next": "/students/?class_name=Tue+pm",
             "purchase_date": "2026-10-31", "notes": "",
         })
         self.assertRedirects(response, reverse("tracker:student_list") + "?class_name=Tue+pm")
@@ -222,10 +222,9 @@ class ViewTests(TestCase):
     def test_inactive_material_not_offered(self):
         self.material.is_active = False
         self.material.save()
-        response = self.client.post(reverse("tracker:purchase_new"), {
-            "student": self.student.pk, "material": self.material.pk, "quantity": "1", "purchase_date": "2026-10-31",
-        })
-        self.assertEqual(response.status_code, 200)
+        basket_url = reverse("tracker:class_basket", args=[self.student.pk])
+        self.assertNotIn(self.material, self.client.get(basket_url).context["quick"])
+        self.client.post(basket_url, {f"qty_{self.material.pk}": "1", "purchase_date": "2026-10-31"})
         self.assertFalse(Purchase.objects.exists())
 
     def test_price_preview_partial(self):
@@ -859,6 +858,56 @@ class ClassModeTests(TestCase):
         self.assertContains(self.client.get(reverse("tracker:class_mode"), {"class_name": "Tue pm"}), "Anne")
         self.assertEqual(self.client.get(self.basket_url).status_code, 200)
 
+    def test_main_purchase_chooser_opens_basket_without_creating_purchase(self):
+        url = reverse("tracker:purchase_new")
+        page = self.client.get(url)
+        self.assertTemplateUsed(page, "tracker/purchase_start.html")
+        self.assertEqual(list(page.context["form"].fields), ["student"])
+        self.assertContains(page, "Open basket")
+        response = self.client.get(url, {"student": self.anne.pk}, follow=True)
+        self.assertTemplateUsed(response, "tracker/class_basket.html")
+        self.assertEqual(response.context["student"].pk, self.anne.pk)
+        self.assertEqual(response.context["back"], url)
+        self.assertContains(response, "Purchase note")
+        self.assertFalse(Purchase.objects.exists())
+        saved = self.client.post(self.basket_url, {
+            f"qty_{self.rings.pk}": "2", "next": url, "notes": "Via main menu",
+        })
+        self.assertRedirects(saved, url)
+        self.assertEqual(Purchase.objects.get().notes, "Via main menu")
+
+    def test_purchase_chooser_validates_student_and_preserves_safe_return(self):
+        url = reverse("tracker:purchase_new")
+        archived = Student.objects.create(name="Archived", is_archived=True)
+        other_class = Student.objects.create(name="Other class", class_name="Wed")
+        for pk in ("", "invalid", 999999, archived.pk, other_class.pk):
+            with self.subTest(pk=pk):
+                response = self.client.get(url, {"student": pk, "class_name": "Tue pm", "next": "/dashboard/"})
+                self.assertTemplateUsed(response, "tracker/purchase_start.html")
+                self.assertTrue(response.context["form"].errors)
+                self.assertEqual(response.context["next"], "/dashboard/")
+        for target, expected in (("/dashboard/", "/dashboard/"), ("https://example.com/", url)):
+            response = self.client.get(url, {"student": self.anne.pk, "next": target}, follow=True)
+            self.assertEqual(response.context["back"], expected)
+        self.assertFalse(Purchase.objects.exists())
+
+    def test_purchase_edit_stays_individual_and_keeps_original_price(self):
+        purchase = Purchase(student=self.anne, material=self.rings, quantity=Decimal("2"))
+        purchase.set_price(reprice=True)
+        purchase.save()
+        self.rings.base_price = Decimal("100")
+        self.rings.save()
+        url = reverse("tracker:purchase_edit", args=[purchase.pk])
+        page = self.client.get(url)
+        self.assertTemplateUsed(page, "tracker/purchase_form.html")
+        self.client.post(url, {
+            "student": self.anne.pk, "material": self.rings.pk, "quantity": "3",
+            "purchase_date": timezone.localdate().isoformat(), "notes": "Edited",
+        })
+        purchase.refresh_from_db()
+        self.assertEqual((purchase.unit_price, purchase.total_cost, purchase.notes),
+                         (Decimal("0.12"), Decimal("0.36"), "Edited"))
+
     def test_unified_navigation_and_class_landing_page(self):
         home = self.client.get(reverse("tracker:home"))
         self.assertEqual(reverse("tracker:home"), "/")
@@ -958,6 +1007,7 @@ class ClassModeTests(TestCase):
         self.assertEqual(Purchase.objects.get().notes, "")
         payment = self.client.post(reverse("tracker:class_payment", args=[self.anne.pk]), {
             "amount": "1", "payment_method": "Cash", "notes": "Payment only", "next": "/students/",
+            "payment_date": timezone.localdate().isoformat(),
         })
         self.assertRedirects(payment, "/students/")
         self.assertEqual(Payment.objects.get().notes, "Payment only")
@@ -1608,8 +1658,32 @@ class ClassPaymentTests(TestCase):
         self.assertContains(response, "Record a payment")
         self.assertContains(response, 'value="Bank Transfer"')
 
+    def test_basket_and_standalone_share_payment_fields(self):
+        from bs4 import BeautifulSoup
+
+        basket = self.client.get(reverse("tracker:class_basket", args=[self.anne.pk]))
+        standalone = self.client.get(reverse("tracker:payment_new"), {"student": self.anne.pk})
+        for response in (basket, standalone):
+            self.assertTemplateUsed(response, "tracker/partials/payment_fields.html")
+        basket_page = BeautifulSoup(basket.content, "html.parser")
+        standalone_page = BeautifulSoup(standalone.content, "html.parser")
+        embedded = basket_page.select_one("#record-payment form")
+        self.assertIsNone(embedded.select_one('[name="student"]'))
+        for name in ("amount", "payment_method", "payment_date", "notes"):
+            self.assertEqual(
+                str(embedded.select_one(f'[name="{name}"]')),
+                str(standalone_page.select_one(f'[name="{name}"]')),
+            )
+        self.assertEqual(
+            str(embedded.select_one(".payment-amounts")),
+            str(standalone_page.select_one(".payment-amounts")),
+        )
+        self.assertEqual(len(embedded.select("[data-payment-amount]")), 11)
+        self.assertIsNotNone(basket_page.select_one('#basket-form textarea[name="notes"]'))
+        self.assertFalse(Payment.objects.exists())
+
     def test_record_payment_returns_to_class(self):
-        response = self.client.post(self.url, {"amount": "12.50", "payment_method": "Card", "payment_date": "",
+        response = self.client.post(self.url, {"amount": "12.50", "payment_method": "Card", "payment_date": timezone.localdate().isoformat(),
                                                "notes": "Deposit"})
         self.assertRedirects(response, reverse("tracker:class_mode") + "?class_name=Tue+pm")
         payment = Payment.objects.get()
@@ -1705,8 +1779,20 @@ class ClassPaymentTests(TestCase):
         response = self.client.post(self.url, {"amount": "0", "payment_method": "Cash", "student": other.pk})
         self.assertRedirects(response, reverse("tracker:class_basket", args=[self.anne.pk]))
         self.assertFalse(Payment.objects.exists())
-        self.client.post(self.url, {"amount": "5", "payment_method": "Cash", "student": other.pk})
+        self.client.post(self.url, {"amount": "5", "payment_method": "Cash", "student": other.pk,
+                                    "payment_date": timezone.localdate().isoformat()})
         self.assertEqual(Payment.objects.get().student, self.anne)
+
+    def test_both_payment_routes_reject_the_same_invalid_fields(self):
+        valid = {"student": self.anne.pk, "amount": "10", "payment_method": "Cash",
+                 "payment_date": timezone.localdate().isoformat()}
+        for field, value in (("amount", ""), ("amount", "0"), ("amount", "-5"),
+                             ("payment_method", "Invalid"), ("payment_date", "")):
+            with self.subTest(field=field, value=value):
+                for url in (self.url, reverse("tracker:payment_new")):
+                    response = self.client.post(url, {**valid, field: value}, follow=True)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertFalse(Payment.objects.exists())
 
 
 class MaterialKindTests(TestCase):

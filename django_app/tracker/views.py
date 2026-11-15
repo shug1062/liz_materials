@@ -22,7 +22,7 @@ from . import contacts_import, margins, silver, statements, suppliers, undo
 from . import reports as reports_lib
 from .forms import (
     BackupSettingsForm, DateRangeForm, MaterialForm, MaterialGridForm, MaterialSectionFormSet,
-    PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm,
+    PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm, PurchaseStudentForm,
     SaleFilterForm, SaleForm, SilverPriceForm, StudentForm,
     StudioClassForm, TermDatesForm, CourseFeeForm, NextTermForm,
 )
@@ -356,19 +356,31 @@ def _students_for(request, include_archived=False):
     return students
 
 
-def purchase_form(request, pk=None):
-    purchase = get_object_or_404(Purchase, pk=pk) if pk else None
-    initial = {"student": request.GET.get("student")} if not purchase else {}
-    form = PurchaseForm(request.POST or None, instance=purchase, initial=initial,
-                        students=None if purchase else _students_for(request))
-    default_next = purchase.student.get_absolute_url() if purchase else None
+def purchase_start(request):
+    data = request.POST if request.method == "POST" else request.GET if "student" in request.GET else None
+    form = PurchaseStudentForm(data, students=_students_for(request))
+    next_url = _next_url(request, reverse("tracker:purchase_new"))
+    if form.is_bound and form.is_valid():
+        student = form.cleaned_data["student"]
+        return redirect(reverse("tracker:class_basket", args=[student.pk]) + "?" + urlencode({"next": next_url}))
+    return render(request, "tracker/purchase_start.html", {
+        "form": form,
+        "next": next_url,
+        "class_name": request.GET.get("class_name", ""),
+    })
+
+
+def purchase_form(request, pk):
+    purchase = get_object_or_404(Purchase, pk=pk)
+    form = PurchaseForm(request.POST or None, instance=purchase)
+    default_next = purchase.student.get_absolute_url()
     if request.method == "POST" and form.is_valid():
         saved = form.save()
         messages.success(request, f"Purchase saved: {saved.material} × {saved.quantity} = £{saved.total_cost}.")
         return redirect(_next_url(request, default_next or _class_students_url(saved.student.class_name)))
     return render(request, "tracker/purchase_form.html", {
         "form": form,
-        "title": "Edit purchase" if purchase else "Record purchase",
+        "title": "Edit purchase",
         "purchase": purchase,
         "next": _next_url(request, default_next or reverse("tracker:dashboard")),
     })
@@ -603,7 +615,7 @@ def class_basket(request, pk):
         "purchases": student.purchases.select_related("material", "project").order_by("-purchase_date", "-pk"),
         "projects": Project.objects.all(),
         "today": timezone.localdate(),
-        "methods": Payment.Method.choices,
+        "payment_form": PaymentForm(initial={"student": student.pk}, students=Student.objects.filter(pk=student.pk)),
         "owed": -student.balance if student.balance < 0 else ZERO,
     })
 
@@ -639,8 +651,6 @@ def class_payment(request, pk):
     student = get_object_or_404(Student, pk=pk)
     data = request.POST.copy()
     data["student"] = student.pk
-    if not data.get("payment_date"):
-        data["payment_date"] = timezone.localdate().isoformat()
     form = PaymentForm(data, students=Student.objects.filter(pk=student.pk))
     if form.is_valid():
         payment = form.save()

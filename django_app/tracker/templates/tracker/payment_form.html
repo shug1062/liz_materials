@@ -8,21 +8,9 @@
          hx-target="#balance" hx-include="#id_student">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ next }}">
-      {{ form.non_field_errors }}
       {{ form.student.errors }}<label>Student {{ form.student }}</label>
       <div id="balance" aria-live="polite"></div>
-      <div class="grid">
-        <div>{{ form.amount.errors }}<label>Amount (£) {{ form.amount }}</label></div>
-        <div>{{ form.payment_method.errors }}<label>Method {{ form.payment_method }}</label></div>
-      </div>
-      <div class="btn-row" role="group" aria-label="Quick payment amounts">
-        <button type="button" class="small ghost" data-payment-amount="5.00">£5</button>
-        <button type="button" class="small ghost" data-payment-amount="10.00">£10</button>
-        <button type="button" class="small ghost" data-payment-amount="20.00">£20</button>
-      </div>
-      <p class="helptext">Choose an amount or type your own, then Save payment to confirm.</p>
-      {{ form.payment_date.errors }}<label>Date {{ form.payment_date }}</label>
-      {{ form.notes.errors }}<label>Notes {{ form.notes }}</label>
+      {% include "tracker/partials/payment_fields.html" %}
     </div>
     <div class="form-actions">
       <a role="button" class="ghost" href="{{ next }}">Cancel</a>

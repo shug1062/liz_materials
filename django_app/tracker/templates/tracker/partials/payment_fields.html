@@ -1,0 +1,21 @@
+{{ form.non_field_errors }}
+<div class="grid">
+  <div>{{ form.amount.errors }}<label>Amount (£) {{ form.amount }}</label></div>
+  <div>{{ form.payment_method.errors }}<label>Method {{ form.payment_method }}</label></div>
+</div>
+<div class="payment-amounts" role="group" aria-label="Quick payment amounts">
+  <button type="button" class="small ghost" data-payment-amount="5.00">£5</button>
+  <button type="button" class="small ghost" data-payment-amount="10.00">£10</button>
+  <button type="button" class="small ghost" data-payment-amount="20.00">£20</button>
+  <button type="button" class="small ghost" data-payment-amount="30.00">£30</button>
+  <button type="button" class="small ghost" data-payment-amount="40.00">£40</button>
+  <button type="button" class="small ghost" data-payment-amount="50.00">£50</button>
+  <button type="button" class="small ghost" data-payment-amount="60.00">£60</button>
+  <button type="button" class="small ghost" data-payment-amount="70.00">£70</button>
+  <button type="button" class="small ghost" data-payment-amount="80.00">£80</button>
+  <button type="button" class="small ghost" data-payment-amount="90.00">£90</button>
+  <button type="button" class="small ghost" data-payment-amount="100.00">£100</button>
+</div>
+<p class="helptext">Choose an amount or type your own, then Save payment to confirm.</p>
+{{ form.payment_date.errors }}<label>Date {{ form.payment_date }}</label>
+{{ form.notes.errors }}<label>Notes {{ form.notes }}</label>

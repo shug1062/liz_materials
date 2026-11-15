@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel form-card">
+  <header><h3>Record purchase</h3></header>
+  <form method="get">
+    <div class="body">
+      <p>Choose a student to open their basket and add materials.</p>
+      <input type="hidden" name="next" value="{{ next }}">
+      {% if class_name %}<input type="hidden" name="class_name" value="{{ class_name }}">{% endif %}
+      {{ form.non_field_errors }}
+      {{ form.student.errors }}<label>Student {{ form.student }}</label>
+    </div>
+    <div class="form-actions">
+      <button type="submit">Open basket</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

@@ -38,6 +38,15 @@ class StudentForm(forms.ModelForm):
         }
 
 
+class PurchaseStudentForm(forms.Form):
+    student = forms.ModelChoiceField(queryset=Student.objects.none())
+
+    def __init__(self, *args, students, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["student"].queryset = students
+        self.fields["student"].label_from_instance = student_label
+
+
 class PurchaseForm(forms.ModelForm):
     class Meta:
         model = Purchase
