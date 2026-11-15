@@ -5,15 +5,30 @@
     <p class="eyebrow">Class register</p>
     <h1>Choose a class</h1>
   </div>
+  <div class="btn-row">
+    <a role="button" class="ghost" href="{% url 'tracker:student_list' %}">All students</a>
+    <a role="button" class="ghost" href="{% url 'tracker:archived_students' %}">Archived ({{ n_archived }})</a>
+    <a role="button" class="ghost" href="{% url 'tracker:student_import' %}">Import from Wix</a>
+    <a role="button" class="ghost" href="{% url 'tracker:class_list' %}">Manage classes</a>
+    <a role="button" href="{% url 'tracker:student_add' %}">Add student</a>
+  </div>
+</div>
+<div class="chips presets" aria-label="Class filter">
+  <a class="chip{% if show == 'current' %} selected{% endif %}" href="{% url 'tracker:home' %}">Current &amp; upcoming</a>
+  <a class="chip{% if show == 'all' %} selected{% endif %}" href="{% url 'tracker:home' %}?show=all">All classes</a>
+  <a class="chip{% if show == 'finished' %} selected{% endif %}" href="{% url 'tracker:home' %}?show=finished">Finished classes</a>
 </div>
 <div class="tile-grid">
-  {% for value, label, count in classes %}
-    <a class="tile class-tile" href="{% url 'tracker:class_mode' %}?class_name={{ value|urlencode }}">
-      <span class="tile-name">{{ label }}</span>
-      <span class="unit">{{ count }} student{{ count|pluralize }}</span>
+  {% for c in classes %}
+    <a class="tile class-tile" href="{% url 'tracker:class_mode' %}?class_name={{ c.name|urlencode }}">
+      <span class="tile-name">{{ c.label }}</span>
+      <span class="unit">{{ c.count }} student{{ c.count|pluralize }}</span>
+      {% if c.status %}<span class="badge status-{{ c.status }}">{{ c.status|capfirst }}</span>{% endif %}
+      {% if c.start_date or c.end_date %}<span class="unit">{{ c.start_date|date:"j M Y"|default:"…" }} – {{ c.end_date|date:"j M Y"|default:"ongoing" }}</span>{% endif %}
+      {% if c.projects %}<span class="unit">Projects: {% for project in c.projects %}{{ project.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}
     </a>
   {% empty %}
-    <p class="empty">No classes yet.</p>
+    <p class="empty">No classes in this view. Use Manage classes to create one, or choose All classes.</p>
   {% endfor %}
 </div>
 {% endblock %}

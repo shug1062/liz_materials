@@ -5,12 +5,19 @@
   <div>
     <p class="eyebrow">Tap a name to add materials</p>
     <h1>{{ class_label }}</h1>
+    {% if studio_class.notes %}<p class="lede">{{ studio_class.notes }}</p>{% endif %}
     {% if studio_class.start_date %}<p class="unit">Class starts {{ studio_class.start_date|date:"j M Y" }}{% if studio_class.end_date %} · Ends {{ studio_class.end_date|date:"j M Y" }}{% endif %}</p>{% endif %}
   </div>
   <div class="btn-row">
     {% if studio_class %}<a role="button" class="ghost" href="{% url 'tracker:class_project_add' studio_class.pk %}?next={{ request.get_full_path|urlencode }}">Add project</a>{% endif %}
     <a role="button" class="ghost" href="{% url 'tracker:class_materials' %}?class_name={{ class_name|urlencode }}&amp;next={{ request.get_full_path|urlencode }}">Add material to class</a>
     <a role="button" class="ghost" href="{% url 'tracker:sale_new' %}?class_name={{ class_name|urlencode }}">Record a sale</a>
+    <a role="button" class="ghost" href="{% url 'tracker:student_list' %}?class_name={{ class_name|urlencode }}">Account overview</a>
+    <a role="button" class="ghost" href="{% url 'tracker:student_add' %}?class_name={{ class_name|urlencode }}&amp;next={{ request.get_full_path|urlencode }}">Add student</a>
+    {% if studio_class %}
+      <a role="button" class="ghost" href="{% url 'tracker:class_day' studio_class.pk %}">Class summary</a>
+      <a role="button" class="ghost" href="{% url 'tracker:class_detail' studio_class.pk %}">Manage class</a>
+    {% endif %}
   </div>
 </div>
 <section class="panel" id="class-projects">

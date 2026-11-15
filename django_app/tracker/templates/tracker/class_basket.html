@@ -14,6 +14,7 @@
   </div>
 </div>
 
+{% include "tracker/partials/student_tabs.html" %}
 {% include "tracker/partials/pending_materials.html" %}
 
 {% include "tracker/partials/purchase_basket.html" %}
@@ -35,7 +36,7 @@
 <section id="purchase-history">
   <div class="page-head">
     <h2>Past purchases</h2>
-    <a role="button" class="small ghost" href="{{ student.get_absolute_url }}">Student details</a>
+    <a role="button" class="small ghost" href="{{ student.get_absolute_url }}">Account &amp; history</a>
   </div>
   {% include "tracker/partials/purchase_table.html" %}
 </section>

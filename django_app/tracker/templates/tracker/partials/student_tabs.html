@@ -1,0 +1,5 @@
+<div class="chips presets" role="navigation" aria-label="Student sections">
+  <a class="chip{% if student_tab == 'materials' %} selected{% endif %}"{% if student_tab == 'materials' %} aria-current="page"{% endif %} href="{% url 'tracker:class_basket' student.pk %}">Materials</a>
+  <a class="chip{% if student_tab == 'account' %} selected{% endif %}"{% if student_tab == 'account' %} aria-current="page"{% endif %} href="{{ student.get_absolute_url }}">Account &amp; history</a>
+  <a class="chip{% if student_tab == 'details' %} selected{% endif %}"{% if student_tab == 'details' %} aria-current="page"{% endif %} href="{% url 'tracker:student_edit' student.pk %}">Details</a>
+</div>

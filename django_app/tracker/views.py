@@ -36,10 +36,16 @@ from .models import (
 NO_CLASS = "No class assigned"
 
 
-def _class_students_url(class_name):
-    """The Students page for one class – where Liz returns after recording something for one of its students."""
-    url = reverse("tracker:student_list")
-    return f"{url}?{urlencode({'class_name': class_name})}" if class_name else url
+def _class_url(class_name):
+    return f"{reverse('tracker:class_mode')}?{urlencode({'class_name': class_name})}"
+
+
+def _student_register_url(student):
+    if student.is_archived:
+        return reverse("tracker:archived_students")
+    if student.is_sales_channel:
+        return reverse("tracker:student_list") + "#sales-channels"
+    return _class_url(student.class_name)
 
 
 def _next_url(request, default):
@@ -136,13 +142,13 @@ def settings_page(request):
 
 
 def student_list(request):
-    selected = request.GET.get("class_name", "")
+    selected = request.GET.get("class_name")
     students = Student.objects.with_balances().active().filter(is_sales_channel=False)
-    if selected:
+    if selected is not None:
         students = students.filter(class_name=selected)
     groups = {}
     for s in statements.with_history(students):
-        s.back_url = _class_students_url(s.class_name)
+        s.back_url = _student_register_url(s)
         s.statement = statements.statement_for(s)
         groups.setdefault(s.class_name or NO_CLASS, []).append(s)
     order = StudioClass.ordered_class_names() + [NO_CLASS]
@@ -160,6 +166,9 @@ def student_list(request):
     return render(request, "tracker/student_list.html", {
         "groups": grouped,
         "selected": selected,
+        "class_selected": selected is not None,
+        "class_label": selected or NO_CLASS,
+        "back": _class_url(selected) if selected is not None else reverse("tracker:home"),
         "no_class": NO_CLASS,
         "channels": Student.objects.with_balances().filter(is_sales_channel=True),
         "n_archived": Student.objects.filter(is_archived=True).count(),
@@ -183,7 +192,7 @@ def student_archive(request, pk):
     student.is_archived = not student.is_archived
     student.archived_at = timezone.now() if student.is_archived else None
     student.save(update_fields=["is_archived", "archived_at"])
-    return redirect(_next_url(request, student.get_absolute_url()))
+    return redirect(_next_url(request, _student_register_url(student)))
 
 
 def student_merge(request, pk):
@@ -295,6 +304,8 @@ def student_detail(request, pk):
     student = get_object_or_404(statements.with_history(Student.objects.with_balances()), pk=pk)
     return render(request, "tracker/student_detail.html", {
         "student": student,
+        "student_back": _student_register_url(student),
+        "student_tab": "account",
         "purchases": student.purchases.select_related("material", "project"),
         "payments": student.payments.all(),
         "sales": student.sales.all(),
@@ -331,15 +342,21 @@ def balances_to_chase(request):
 
 def student_form(request, pk=None):
     student = get_object_or_404(Student, pk=pk) if pk else None
+    student_back = _student_register_url(student) if student else reverse("tracker:home")
+    title = f"Edit {student.name}" if student else "Add student"
     form = StudentForm(request.POST or None, instance=student, initial={"class_name": request.GET.get("class_name", "")})
     if request.method == "POST" and form.is_valid():
         student = form.save()
         messages.success(request, f"Saved {student.name}.")
-        return redirect(_next_url(request, student.get_absolute_url()))
-    return render(request, "tracker/form_page.html", {
+        return redirect(_next_url(request, _student_register_url(student)))
+    return render(request, "tracker/student_form.html", {
         "form": form,
-        "title": f"Edit {student.name}" if student else "Add student",
-        "cancel_url": _next_url(request, student.get_absolute_url() if student else reverse("tracker:student_list")),
+        "student": student,
+        "student_tab": "details",
+        "student_back": student_back,
+        "next": _next_url(request, ""),
+        "title": title,
+        "cancel_url": _next_url(request, student_back),
         "class_names": StudioClass.ordered_class_names(include_finished=False),
     })
 
@@ -347,9 +364,10 @@ def student_form(request, pk=None):
 @require_POST
 def student_delete(request, pk):
     student = get_object_or_404(Student, pk=pk)
+    back = _next_url(request, _student_register_url(student))
     student.delete()
     messages.success(request, f"Deleted {student.name} and all their purchases and payments.")
-    return redirect("tracker:student_list")
+    return redirect(back)
 
 
 def _students_for(request, include_archived=False):
@@ -382,7 +400,7 @@ def purchase_form(request, pk):
     if request.method == "POST" and form.is_valid():
         saved = form.save()
         messages.success(request, f"Purchase saved: {saved.material} × {saved.quantity} = £{saved.total_cost}.")
-        return redirect(_next_url(request, default_next or _class_students_url(saved.student.class_name)))
+        return redirect(_next_url(request, default_next or _student_register_url(saved.student)))
     return render(request, "tracker/purchase_form.html", {
         "form": form,
         "title": "Edit purchase",
@@ -427,7 +445,7 @@ def payment_form(request, pk=None):
     if request.method == "POST" and form.is_valid():
         saved = form.save()
         messages.success(request, f"Payment of £{saved.amount} from {saved.student} saved.")
-        return redirect(_next_url(request, default_next or _class_students_url(saved.student.class_name)))
+        return redirect(_next_url(request, default_next or _student_register_url(saved.student)))
     return render(request, "tracker/payment_form.html", {
         "form": form,
         "title": "Edit payment" if payment else "Record payment",
@@ -547,10 +565,6 @@ def undo_last(request):
 
 # ---------- Class mode (student-facing: student prices only, no costs or other balances) ----------
 
-def _class_url(class_name):
-    return f"{reverse('tracker:class_mode')}?{urlencode({'class_name': class_name})}"
-
-
 def _class_material_columns(students, class_name):
     columns = {}
 
@@ -663,7 +677,7 @@ def _activate_class_project(studio_class, project, started_on):
 
 def class_project_add(request, pk):
     studio_class = get_object_or_404(StudioClass, pk=pk)
-    back = _next_url(request, studio_class.get_absolute_url())
+    back = _next_url(request, _class_url(studio_class.name))
     form = ClassProjectForm(request.POST if request.method == "POST" else None, studio_class=studio_class)
     if request.method == "POST" and form.is_valid():
         review_url = reverse("tracker:project_class_materials", args=[form.cleaned_data["project"].pk])
@@ -687,7 +701,7 @@ def class_project_remove(request, pk, project_pk):
                       restore=[assignment])
         assignment.is_active = False
         assignment.save(update_fields=["is_active"])
-    return redirect(_next_url(request, studio_class.get_absolute_url()))
+    return redirect(_next_url(request, _class_url(studio_class.name)))
 
 
 def _class_project_edit_url(request):
@@ -705,11 +719,24 @@ def class_mode(request):
     students = Student.objects.active().filter(is_sales_channel=False)
     if class_name is None:
         counts = dict(students.values_list("class_name").annotate(n=Count("id")))
-        classes = [(name, name, counts[name]) for name in StudioClass.ordered_class_names(include_finished=False)
-                   if name in counts]
-        if counts.get(""):
-            classes.append(("", NO_CLASS, counts[""]))
-        return render(request, "tracker/class_mode_index.html", {"classes": classes})
+        show = request.GET.get("show", "current")
+        if show not in {"current", "all", "finished"}:
+            messages.error(request, "Choose Current & upcoming, All classes or Finished classes.")
+            show = "current"
+        classes = [c for c in StudioClass.objects.all() if show == "all" or
+                   (c.status == "finished" if show == "finished" else c.status != "finished")]
+        projects = _projects_by_class(c.name for c in classes)
+        cards = [{
+            "name": c.name, "label": c.name, "count": counts.get(c.name, 0),
+            "status": c.status, "start_date": c.start_date, "end_date": c.end_date,
+            "projects": projects[c.name],
+        } for c in classes]
+        if counts.get("") and show != "finished":
+            cards.append({"name": "", "label": NO_CLASS, "count": counts[""], "projects": []})
+        return render(request, "tracker/class_mode_index.html", {
+            "classes": cards, "show": show,
+            "n_archived": Student.objects.filter(is_archived=True).count(),
+        })
     students = list(statements.with_history(students.filter(class_name=class_name)).prefetch_related(
         Prefetch("pending_materials", queryset=PendingMaterial.objects.select_related("material")),
     ))
@@ -766,7 +793,7 @@ def _quick_materials():
 
 def class_basket(request, pk):
     student = get_object_or_404(Student.objects.with_balances(), pk=pk)
-    class_back = _class_url(student.class_name)
+    class_back = _student_register_url(student)
     back = _next_url(request, class_back)
     if request.method == "POST":
         materials = {m.pk: m for m in Material.objects.filter(is_active=True)}
@@ -801,6 +828,8 @@ def class_basket(request, pk):
         return redirect(back)
     return render(request, "tracker/class_basket.html", {
         "student": student,
+        "student_back": class_back,
+        "student_tab": "materials",
         "back": back,
         "back_label": (student.class_name or NO_CLASS) if back == class_back else "Back",
         "class_label": student.class_name or NO_CLASS,
@@ -833,7 +862,7 @@ def _project_history_materials(project):
 
 def class_materials(request, project_pk=None):
     project = get_object_or_404(Project, pk=project_pk) if project_pk is not None else None
-    back = _next_url(request, reverse("tracker:project_list" if project else "tracker:class_list"))
+    back = _next_url(request, reverse("tracker:project_list" if project else "tracker:home"))
     data = request.POST if request.method == "POST" else request.GET if "review" in request.GET else None
     form = ClassMaterialsForm(data, project=project, initial={"class_name": request.GET.get("class_name", "")})
     project_setup_url = None
@@ -1523,6 +1552,7 @@ def class_list(request):
     for c in classes:
         c.n_students = counts.get(c.name, 0)
         c.projects = projects[c.name]
+        c.register_url = _class_url(c.name)
     return render(request, "tracker/class_list.html", {
         "classes": classes,
         "n_candidates": len(_archive_candidates()),
@@ -1568,7 +1598,7 @@ def class_charge(request, pk):
             n = len(created)
             undo.remember(request, f"Charged {n} student{'s' if n != 1 else ''} £{amount} for {description}.",
                           created=created)
-            return redirect(studio_class)
+            return redirect(_class_url(studio_class.name))
     return render(request, "tracker/class_charge.html", {
         "studio_class": studio_class,
         "students": students,
@@ -1614,11 +1644,11 @@ def class_form(request, pk=None):
                 PendingMaterial.objects.filter(class_name=old_name).update(class_name=saved.name)
                 ClassMaterialArchive.objects.filter(class_name=old_name).update(class_name=saved.name)
         messages.success(request, f"Saved {saved.name}.")
-        return redirect(saved)
+        return redirect(_class_url(saved.name))
     return render(request, "tracker/form_page.html", {
         "form": form,
         "title": f"Edit {studio_class.name}" if studio_class else "New class",
-        "cancel_url": studio_class.get_absolute_url() if studio_class else reverse("tracker:class_list"),
+        "cancel_url": _class_url(studio_class.name) if studio_class else reverse("tracker:home"),
     })
 
 
@@ -1635,6 +1665,7 @@ def class_detail(request, pk):
     studio_class = get_object_or_404(StudioClass, pk=pk)
     return render(request, "tracker/class_detail.html", {
         "studio_class": studio_class,
+        "class_register_url": _class_url(studio_class.name),
         "class_projects": _projects_by_class([studio_class.name])[studio_class.name],
         "project_edit_url": _class_project_edit_url(request),
         "students": _with_carried_debt(
@@ -1672,7 +1703,7 @@ def class_next_term(request, pk):
             Student.objects.filter(pk__in=[s.pk for s in moving]).update(class_name=new_class.name)
             undo.remember(request, f"Started {new_class.name} for next term with {len(moving)} students.",
                           created=[new_class], restore=originals)
-        return redirect(new_class)
+        return redirect(_class_url(new_class.name))
     return render(request, "tracker/class_next_term.html", {
         "studio_class": studio_class,
         "students": students,

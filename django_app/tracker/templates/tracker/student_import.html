@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<a class="crumb" href="{% url 'tracker:student_list' %}">← Students</a>
+<a class="crumb" href="{% url 'tracker:home' %}">← Class register</a>
 <div class="page-head">
   <div>
     <p class="eyebrow">Students</p>
@@ -24,7 +24,7 @@
       <label>CSV file <input type="file" name="file" accept=".csv,text/csv" required></label>
     </div>
     <div class="form-actions">
-      <a role="button" class="ghost" href="{% url 'tracker:student_list' %}">Cancel</a>
+      <a role="button" class="ghost" href="{% url 'tracker:home' %}">Cancel</a>
       <button type="submit">Check the file</button>
     </div>
   </form>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load money %}
 {% block content %}
-<a class="crumb no-print" href="{{ studio_class.get_absolute_url }}">← {{ studio_class.name }}</a>
+<a class="crumb no-print" href="{% url 'tracker:class_mode' %}?class_name={{ studio_class.name|urlencode }}">← {{ studio_class.name }} register</a>
 <div class="page-head">
   <div>
     <p class="eyebrow">Class summary</p>

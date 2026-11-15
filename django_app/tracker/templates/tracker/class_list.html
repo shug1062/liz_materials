@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
+<a class="crumb" href="{% url 'tracker:home' %}">← Class register</a>
 <div class="page-head">
   <div>
     <p class="eyebrow">Courses &amp; terms</p>
-    <h1>Classes</h1>
+    <h1>Manage classes</h1>
     <p class="lede">Drag to reorder. Classes with an end date in the past count as finished.</p>
   </div>
   <div class="btn-row">
@@ -27,11 +28,12 @@
       <div class="sortable-item class-row">
         <span class="handle" aria-hidden="true">⠿</span>
         <input type="hidden" name="class_name" value="{{ c.name }}">
-        <a href="{{ c.get_absolute_url }}" class="class-row-name">{{ c.name }}</a>
+        <a href="{% url 'tracker:class_mode' %}?class_name={{ c.name|urlencode }}" class="class-row-name">{{ c.name }}</a>
         <span class="badge status-{{ c.status }}">{{ c.status|capfirst }}</span>
         <span class="unit">{% if c.start_date or c.end_date %}{{ c.start_date|date:"j M Y"|default:"…" }} – {{ c.end_date|date:"j M Y"|default:"ongoing" }}{% endif %}</span>
         <span class="class-row-count">{{ c.n_students }} student{{ c.n_students|pluralize }}</span>
-        <a role="button" class="small ghost" href="{{ c.get_absolute_url }}#class-projects">Projects ({{ c.projects|length }})</a>
+        <a role="button" class="small ghost" href="{{ c.register_url }}#class-projects">Projects ({{ c.projects|length }})</a>
+        <a role="button" class="small ghost" href="{{ c.get_absolute_url }}">Manage class</a>
         {% if c.projects %}{% include "tracker/partials/class_project_links.html" with class_projects=c.projects %}{% endif %}
         <a role="button" class="small ghost" href="{% url 'tracker:class_materials' %}?class_name={{ c.name|urlencode }}&amp;next={{ request.get_full_path|urlencode }}">Add material to class</a>
         <a role="button" class="small ghost" href="{% url 'tracker:class_project_add' c.pk %}?next={{ request.get_full_path|urlencode }}">Add project</a>

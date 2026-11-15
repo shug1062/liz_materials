@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% load money %}
 {% block content %}
-<a class="crumb" href="{% url 'tracker:class_list' %}">← Classes</a>
+<a class="crumb" href="{% url 'tracker:class_mode' %}?class_name={{ studio_class.name|urlencode }}">← {{ studio_class.name }} register</a>
 <div class="page-head">
   <div>
     <p class="eyebrow"><span class="badge status-{{ studio_class.status }}">{{ studio_class.status|capfirst }}</span>
       {% if studio_class.start_date or studio_class.end_date %}&nbsp;{{ studio_class.start_date|date:"j M Y"|default:"…" }} – {{ studio_class.end_date|date:"j M Y"|default:"ongoing" }}{% endif %}</p>
-    <h1>{{ studio_class.name }}</h1>
+    <h1>Manage {{ studio_class.name }}</h1>
     {% if studio_class.notes %}<p class="lede">{{ studio_class.notes }}</p>{% endif %}
   </div>
   <div class="btn-row">
@@ -31,7 +31,7 @@
 </section>
 <div class="report-grid">
   <section class="panel">
-    <header><h3>Students ({{ students|length }})</h3><a href="{% url 'tracker:student_add' %}?class_name={{ studio_class.name|urlencode }}">+ New student</a></header>
+    <header><h3>Students ({{ students|length }})</h3><a href="{% url 'tracker:student_add' %}?class_name={{ studio_class.name|urlencode }}&amp;next={{ class_register_url|urlencode }}">+ New student</a></header>
     <figure>
     <table>
       <tbody>

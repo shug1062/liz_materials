@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="crumb" href="{{ student_back }}">Back to register</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Class register</p>
+    <h1>{{ title }}</h1>
+  </div>
+</div>
+{% if student %}{% include "tracker/partials/student_tabs.html" %}{% endif %}
+<section class="panel form-card">
+  <header><h3>{% if student %}Student details{% else %}New student{% endif %}</h3></header>
+  <form method="post">
+    <div class="panel-body">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      {{ form.as_div }}
+      <datalist id="class-names">{% for c in class_names %}<option value="{{ c }}">{% endfor %}</datalist>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ cancel_url }}">Cancel</a>
+      <button type="submit">Save details</button>
+    </div>
+  </form>
+</section>
+{% if student %}
+<details class="group">
+  <summary>Student administration</summary>
+  <div class="panel-body">
+    <div class="btn-row">
+      <a role="button" class="small ghost" href="{% url 'tracker:student_merge' student.pk %}">Merge with another record</a>
+      <form method="post" action="{% url 'tracker:student_archive' student.pk %}" class="inline">
+        {% csrf_token %}<button class="small ghost">{% if student.is_archived %}Restore student{% else %}Archive student{% endif %}</button>
+      </form>
+      <form method="post" action="{% url 'tracker:student_delete' student.pk %}" class="inline"
+            onsubmit="return confirm('Delete {{ student.name|escapejs }} and ALL their purchases and payments? This cannot be undone.');">
+        {% csrf_token %}<button class="small danger-ghost">Delete student</button>
+      </form>
+    </div>
+  </div>
+</details>
+{% endif %}
+{% endblock %}

@@ -59,10 +59,30 @@ Other settings remain unchanged and are available through each material's
 **Edit** link. Grid edits use the same price history and price-date rules as
 the full edit form.
 
+## Unified class register
+
+**Class register** is the single main-menu entry for classes and students.
+The class chooser includes empty classes and offers **Current & upcoming**,
+**All classes** and **Finished classes** filters. **All students** retains the
+account overview and sales-channel records; **Archived**, **Import from Wix**,
+**Add student** and **Manage classes** are available from the chooser.
+
+Inside a class, **Manage class** provides membership changes, class details,
+course fees and next-term copying. **Account overview** retains purchase/payment
+totals, balances, credit and email statements; **Class summary** remains printable.
+Manage classes retains reordering, new classes, bulk term dates and archive review.
+
+Each student has **Materials**, **Account & history** and **Details** sections.
+Student administration (merge, archive/restore and delete) lives under Details.
+Purchases, payment entry, histories and statements continue to use the existing
+workflows. Default returns lead back to the register; explicit return destinations
+are retained. Existing URLs remain available as subordinate pages, so bookmarks
+and account history are preserved. This is a navigation change, not a database merge.
+
 ## Class-wide materials
 
 Projects linked through purchases or pending materials appear on the class
-register's class page and on class details. Each Classes row also shows a
+register's class page and on Manage class. Each Manage classes row also shows a
 **Projects** button and named project links. Links open the corresponding
 project summary. These lists show only explicitly active projects dated within
 the class's current term, not old purchase history. **Add project** sits beside
@@ -88,7 +108,7 @@ Already-finished classes are left unchanged, including any missing start dates.
 On **Projects**, use **Edit project & materials** to save a reusable list of
 materials with optional default quantities. **Add project materials to class**
 opens a review table for every active student in the chosen class.
-**Add material to class** on Classes and Class register opens the same shared
+**Add material to class** on Manage classes and Class register opens the same shared
 Quick add/search basket as individual students, allowing several materials.
 It reviews per-student quantities before saving. Archived students and sales
 channels are excluded.

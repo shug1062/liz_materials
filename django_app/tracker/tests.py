@@ -704,13 +704,13 @@ class ViewTests(TestCase):
         response = self.client.post(reverse("tracker:payment_new") + "?next=https://evil.example/", {
             "student": self.student.pk, "amount": "5", "payment_method": "Cash", "payment_date": "2026-10-31",
         })
-        self.assertRedirects(response, reverse("tracker:student_list") + "?class_name=Tue+pm")
+        self.assertRedirects(response, reverse("tracker:class_mode") + "?class_name=Tue+pm")
 
     def test_students_page_returns_to_the_class_you_were_in(self):
         Student.objects.create(name="Karen", class_name="Tue pm")
         Student.objects.create(name="Wendy", class_name="Wed am")
         all_page = self.client.get(reverse("tracker:student_list"))
-        back = "next=/students/%3Fclass_name%3DTue%2Bpm"
+        back = "next=/class/%3Fclass_name%3DTue%2Bpm"
         self.assertContains(all_page, back)  # Amy's Purchase button returns to Tue pm, even from "all classes"
 
         class_page = self.client.get(reverse("tracker:student_list"), {"class_name": "Tue pm"})
@@ -1294,7 +1294,7 @@ class ProjectTests(TestCase):
         response = self.client.get(reverse("tracker:class_list"))
         row = next(c for c in response.context["classes"] if c.pk == studio_class.pk)
         self.assertEqual(row.projects, expected)
-        self.assertContains(response, f'{studio_class.get_absolute_url()}#class-projects')
+        self.assertContains(response, f'{reverse("tracker:class_mode")}?class_name=Tue#class-projects')
         self.assertContains(response, "Projects (2)")
         response = self.client.get(reverse("tracker:project_list"), {"project": pending_project.pk})
         self.assertContains(response, f'id="project-{pending_project.pk}" open')
@@ -1611,7 +1611,7 @@ class ClassModeTests(TestCase):
                 self.assertTemplateUsed(basket, "tracker/class_basket.html")
                 self.assertContains(basket, "Purchase note (optional)")
                 self.assertContains(basket, 'name="notes"', count=2)
-                expected = self.anne.get_absolute_url() if label == "Record purchase" else "/students/?class_name=Tue+pm"
+                expected = self.anne.get_absolute_url() if label == "Record purchase" else "/class/?class_name=Tue+pm"
                 self.assertEqual(basket.context["back"], expected)
 
     def test_basket_note_applies_to_every_purchase_from_either_route(self):
@@ -1864,7 +1864,7 @@ class StatementTests(TestCase):
         for target in (reverse("tracker:student_list"), reverse("tracker:student_list") + "?class_name=Tue",
                        "", "https://example.com/"):
             with self.subTest(target=target):
-                expected = target if target.startswith("/students/") else self.amy.get_absolute_url()
+                expected = target if target.startswith("/students/") else reverse("tracker:class_mode") + "?class_name=Tue"
                 page = self.client.get(url, {"next": target})
                 self.assertEqual(page.context["cancel_url"], expected)
                 from urllib.parse import urlencode
@@ -1903,6 +1903,94 @@ class ClassesAndArchiveTests(TestCase):
 
     def test_status_from_dates(self):
         self.assertEqual([self.autumn.status, self.winter.status, self.ongoing.status], ["finished", "upcoming", "current"])
+
+    def test_register_filters_keep_empty_finished_and_unassigned_classes_accessible(self):
+        empty = StudioClass.objects.create(name="Empty class")
+        project = Project.objects.create(name="Current project")
+        ClassProject.objects.create(studio_class=self.ongoing, project=project)
+        home = self.client.get(reverse("tracker:home"))
+        cards = {c["name"]: c for c in home.context["classes"]}
+        self.assertEqual(set(cards), {"Winter", "Tuesday drop-in", "Empty class", ""})
+        self.assertEqual(cards[empty.name]["count"], 0)
+        self.assertEqual(cards[""]["count"], 1)
+        self.assertEqual(cards[self.ongoing.name]["projects"], [project])
+        finished = self.client.get(reverse("tracker:home"), {"show": "finished"})
+        self.assertEqual([c["name"] for c in finished.context["classes"]], ["Autumn"])
+        all_classes = self.client.get(reverse("tracker:home"), {"show": "all"})
+        self.assertEqual({c["name"] for c in all_classes.context["classes"]}, set(cards) | {"Autumn"})
+        unassigned = self.client.get(reverse("tracker:student_list"), {"class_name": ""})
+        self.assertTrue(unassigned.context["class_selected"])
+        self.assertEqual([s for group in unassigned.context["groups"] for s in group["students"]], [self.loose])
+        self.assertEqual(unassigned.context["back"], reverse("tracker:class_mode") + "?class_name=")
+
+    def test_register_is_only_main_entry_and_management_tools_remain_reachable(self):
+        from bs4 import BeautifulSoup
+
+        home = self.client.get(reverse("tracker:home"))
+        for name in ("student_list", "archived_students", "student_import", "class_list", "student_add"):
+            self.assertContains(home, f'href="{reverse("tracker:" + name)}"')
+        for url in (
+            reverse("tracker:home"), reverse("tracker:student_list"), reverse("tracker:class_list"),
+            self.ongoing.get_absolute_url(), self.drop.get_absolute_url(),
+            reverse("tracker:student_edit", args=[self.drop.pk]),
+        ):
+            page = BeautifulSoup(self.client.get(url).content, "html.parser")
+            main = page.select_one('nav[aria-label="Main"]')
+            self.assertEqual([a.get_text(strip=True) for a in main.select("a.active")], ["Class register"])
+            self.assertNotIn("Students", [a.get_text(strip=True) for a in main.select("a")])
+            self.assertNotIn("Classes", [a.get_text(strip=True) for a in main.select("a")])
+        register = self.client.get(reverse("tracker:class_mode"), {"class_name": self.ongoing.name})
+        page = BeautifulSoup(register.content, "html.parser")
+        manage = page.find("a", string="Manage class")
+        management = self.client.get(manage["href"])
+        for name in ("class_edit", "class_charge", "class_next_term", "class_add_search"):
+            self.assertContains(management, reverse("tracker:" + name, args=[self.ongoing.pk]))
+        self.assertContains(management, reverse("tracker:class_add_student", args=[self.ongoing.pk, self.new.pk]))
+        add_student = page.find("a", string="Add student")
+        form = self.client.get(add_student["href"])
+        self.assertEqual(form.context["form"]["class_name"].value(), self.ongoing.name)
+        self.assertEqual(form.context["cancel_url"], register.wsgi_request.get_full_path())
+        self.assertContains(register, reverse("tracker:class_day", args=[self.ongoing.pk]))
+        self.assertContains(self.client.get(reverse("tracker:class_list")), "Set term dates")
+
+    def test_student_sections_and_administration_preserve_special_record_access(self):
+        from bs4 import BeautifulSoup
+
+        self.old.is_archived = True
+        self.old.save()
+        for student, expected_back in (
+            (self.drop, reverse("tracker:class_mode") + "?class_name=Tuesday+drop-in"),
+            (self.loose, reverse("tracker:class_mode") + "?class_name="),
+            (self.old, reverse("tracker:archived_students")),
+            (self.shop, reverse("tracker:student_list") + "#sales-channels"),
+        ):
+            for route, selected in (("class_basket", "Materials"), ("student_detail", "Account & history"),
+                                    ("student_edit", "Details")):
+                response = self.client.get(reverse("tracker:" + route, args=[student.pk]))
+                page = BeautifulSoup(response.content, "html.parser")
+                tabs = page.select_one('[aria-label="Student sections"]')
+                self.assertEqual([a.get_text(strip=True) for a in tabs.select("a")],
+                                 ["Materials", "Account & history", "Details"])
+                self.assertEqual(tabs.select_one('[aria-current="page"]').get_text(strip=True), selected)
+                self.assertEqual(response.context["student_back"], expected_back)
+                if route == "student_edit":
+                    for action in ("student_merge", "student_archive", "student_delete"):
+                        self.assertContains(response, reverse("tracker:" + action, args=[student.pk]))
+                    self.assertFalse(page.select("form form"))
+        overview = self.client.get(reverse("tracker:student_list"))
+        self.assertContains(overview, 'id="sales-channels"')
+        self.assertContains(overview, self.shop.get_absolute_url())
+
+    def test_new_class_and_student_defaults_return_to_register(self):
+        class_response = self.client.post(reverse("tracker:class_add"), {"name": "New empty class"})
+        self.assertRedirects(class_response, reverse("tracker:class_mode") + "?class_name=New+empty+class")
+        new_student = self.client.post(reverse("tracker:student_add"), {"name": "New student", "class_name": "New empty class"})
+        self.assertRedirects(new_student, reverse("tracker:class_mode") + "?class_name=New+empty+class")
+        student = Student.objects.get(name="New student")
+        archived = self.client.post(reverse("tracker:student_archive", args=[student.pk]))
+        self.assertRedirects(archived, reverse("tracker:archived_students"))
+        restored = self.client.post(reverse("tracker:student_archive", args=[student.pk]))
+        self.assertRedirects(restored, reverse("tracker:class_mode") + "?class_name=New+empty+class")
 
     def test_sales_channels_dont_become_classes(self):
         Student.objects.create(name="Craft fair", class_name="Fairs", is_sales_channel=True)
@@ -2677,7 +2765,7 @@ class ContactImportTests(TestCase):
 
 class TermDatesTests(TestCase):
     def setUp(self):
-        self.prev = StudioClass.objects.create(name="Previous student")
+        self.prev = StudioClass.objects.create(name="Previous student", start_date=None)
         self.autumn = StudioClass.objects.create(name="Autumn", start_date=date(2026, 9, 1))
         Student.objects.create(name="Old timer", class_name="Previous student")
         self.url = reverse("tracker:class_dates")
@@ -2711,7 +2799,7 @@ class CourseFeeTests(TestCase):
         self.assertEqual(self.client.get(self.url).context["chosen"], {self.amy.pk, self.ben.pk, self.cat.pk})
         response = self.client.post(self.url, {"description": "Autumn term", "amount": "180", "charge_date": "2026-09-10",
                                                "student": [self.amy.pk, self.ben.pk]})
-        self.assertRedirects(response, self.studio_class.get_absolute_url())
+        self.assertRedirects(response, reverse("tracker:class_mode") + "?class_name=Thurs+11am")
         balances = {s.name: s.balance for s in Student.objects.with_balances()}
         self.assertEqual(balances, {"Amy": Decimal("20.00"), "Ben": Decimal("-180.00"), "Cat": Decimal("0")})
 
@@ -3000,7 +3088,7 @@ class NextTermTests(TestCase):
             "end_date": "2027-03-25", "old_end_date": "2026-10-30", "student": [self.amy.pk],
         })
         spring = StudioClass.objects.get(name="Thurs 11am")
-        self.assertRedirects(response, spring.get_absolute_url())
+        self.assertRedirects(response, reverse("tracker:class_mode") + "?class_name=Thurs+11am")
         self.autumn.refresh_from_db()
         self.amy.refresh_from_db()
         self.ben.refresh_from_db()

@@ -6,6 +6,7 @@ Mermaid is a good fit for this map: it is editable text, can live alongside the
 code, and renders on GitHub and in Markdown viewers with Mermaid support.
 The map is split into connected sections to avoid one unreadably large graph.
 Repeated page names refer to the same page, not duplicate implementations.
+The PNG is an older export; this Mermaid source reflects the unified register.
 
 **Legend:** solid arrows are links to pages; dotted arrows are in-page features,
 external destinations, or return paths as labelled. Add/edit screens sharing a
@@ -21,8 +22,8 @@ flowchart TB
     Menu["Shared navigation on app pages"]
     Menu --> Register["Class register<br/>/ or /class/"]
     Menu --> Dashboard["Dashboard<br/>/dashboard/"]
-    Menu --> Students["Students<br/>/students/"]
-    Menu --> Classes["Classes management<br/>/classes/"]
+    Register --> Students["All students / account overview<br/>/students/"]
+    Register --> Classes["Manage classes<br/>/classes/"]
     Menu --> Purchase["Record purchase - choose student<br/>/purchases/new/"]
     Menu --> Payments["Payments<br/>/payments/"]
     Menu --> Sales["Sales<br/>/sales/"]
@@ -38,19 +39,19 @@ flowchart TB
 
 ## 2. Students, class register and purchases
 
-**Students → Purchase**, **Student details → Record purchase**, and
+**All students → Purchase**, **Account & history → Record purchase**, and
 **Class register → Class → Student** all open the **same shared basket**.
 The main menu's **Record purchase** asks you to select a student, then opens
 the same basket. Existing purchases retain their individual edit form.
 
 ```mermaid
 flowchart LR
-    Register["Class register: choose a class"]
+    Register["Class register: choose a class<br/>Current/upcoming, all or finished; includes empty classes"]
     Class["Class register: students in selected class<br/>/class/?class_name=..."]
-    Students["Students: all classes or filtered class<br/>/students/"]
-    Details["Student details<br/>/students/ID/"]
+    Students["All students / class account overview<br/>/students/"]
+    Details["Student: Account & history<br/>/students/ID/"]
     Basket["SHARED student basket<br/>/class/student/ID/"]
-    StudentForm["Add / edit student<br/>/students/add/ or /students/ID/edit/"]
+    StudentForm["Student: Details / add student<br/>/students/add/ or /students/ID/edit/"]
     Payment["Record payment form<br/>/payments/new/"]
     Purchase["Choose student for purchase<br/>/purchases/new/"]
     PurchaseEdit["Edit existing purchase<br/>/purchases/ID/edit/"]
@@ -66,6 +67,16 @@ flowchart LR
     Classes["Classes management"]
 
     Register -->|Choose class| Class
+    Register --> Students
+    Register --> Archived
+    Register --> Import
+    Register --> Classes
+    Register -->|Add student| StudentForm
+    Class -->|Account overview| Students
+    Class -->|Add student| StudentForm
+    Class -->|Manage class| Management["Class details / membership<br/>/classes/ID/"]
+    Class -->|Class summary| Day["Class summary by date"]
+    Class -->|Add project| ProjectPicker["Select project, then review class material quantities"]
     Class -->|Choose student| Basket
     Class --> Sale
     Class -->|Other classes| Register
@@ -84,21 +95,24 @@ flowchart LR
     Details -->|Record payment| Payment
     Details --> Sale
     Details --> StudentForm
-    Details --> Merge
+    StudentForm --> Merge
+    StudentForm -.->|Archive / restore / delete| AdminActions["Student administration"]
     Details --> Statement
     Details -->|Purchase history: Edit| PurchaseEdit
     Details -->|Payment history: Edit| PaymentEdit
     Details -->|Sales history: Edit| SaleEdit
-    Details -->|Back to class in Students| Students
+    Details -->|Back to register| Class
     Details -.->|Email statement| Email
     Basket -->|Pay cash / Pay card| Payment
-    Basket -->|Student details| Details
+    Basket -->|Account & history tab| Details
+    Basket -->|Details tab| StudentForm
+    StudentForm -->|Materials tab| Basket
     Basket -->|Past purchases: Edit| PurchaseEdit
     Basket -.-> Features["On this same page:<br/>Quick add, material search, multi-item basket,<br/>purchase note, date and project,<br/>record a payment, purchase history"]
-    Basket -.->|Save basket / Cancel| Origin["Originating class register,<br/>Students class list, or student details"]
+    Basket -.->|Save basket / Cancel| Origin["Class register by default,<br/>or explicit return destination"]
     Payment -.->|Save / Cancel from basket| Basket
     StudentForm -.->|Edit from Students: Save / Cancel| Students
-    StudentForm -.->|Edit from details: Save / Cancel| Details
+    StudentForm -.->|Default Save / Cancel| Class
     Purchase -->|Select student| Basket
     Basket -.->|Save / Cancel when opened from chooser| Purchase
     PurchaseEdit -.->|Save / Cancel| History["Originating purchase-history page"]
@@ -119,19 +133,21 @@ flowchart LR
 - The basket has one purchase note copied to every new basket item. Its payment
   notes are separate.
 - Return destinations use the validated `next` parameter where provided.
-  For example, the Students list's Purchase button returns to that student's
-  class-filtered Students list, while Edit preserves the current Students filter.
-- Add student uses the same form as Edit, but saving a new student opens their
-  details page. Not every Save/Cancel return arrow is drawn.
+  For example, All students' Purchase button returns to that student's register,
+  while Edit preserves the current account-overview filter.
+- Student pages share Materials, Account & history and Details tabs.
+  Default saves return to the relevant register; archived students and sales
+  channels retain their own reachable overview. Not every return arrow is drawn.
 
 ## 3. Class administration
 
-Class administration and the day-to-day class register are different pages.
+Class administration is a subordinate part of Class register; the working
+forms remain separate so their existing behaviour and data are preserved.
 
 ```mermaid
 flowchart LR
-    Classes["Classes management<br/>/classes/"]
-    ClassDetails["Class details / membership<br/>/classes/ID/"]
+    Classes["Manage classes<br/>/classes/"]
+    ClassDetails["Manage class / membership<br/>/classes/ID/"]
     ClassForm["Add / edit class<br/>/classes/add/ or /classes/ID/edit/"]
     Dates["Set term dates<br/>/classes/dates/"]
     Review["Review and archive students<br/>/classes/archive/"]
@@ -148,6 +164,8 @@ flowchart LR
     Classes --> Dates
     Classes --> Review
     Classes --> Archived
+    RegisterClass -->|Manage class| ClassDetails
+    RegisterClass --> Day
     ClassDetails -->|Edit class| ClassForm
     ClassDetails --> Fee
     ClassDetails --> Term
@@ -158,12 +176,13 @@ flowchart LR
     ClassDetails -.-> Membership["Inline search and add existing student"]
     ClassDetails -.-> Email["External email app"]
     Day --> Student
-    Day -->|Back| ClassDetails
+    Day -->|Back| RegisterClass
     Review --> Student
     Archived --> Student
     Dates -.->|Save / Cancel| Classes
-    Fee -.->|Back / Cancel| ClassDetails
-    Term -.->|Back / Cancel| ClassDetails
+    Fee -.->|Save / Back / Cancel| RegisterClass
+    Term -.->|Save / Back / Cancel| RegisterClass
+    ClassForm -.->|Save| RegisterClass
 ```
 
 ## 4. Materials, finance, projects and settings

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load money %}
 {% block content %}
-<a class="crumb" href="{{ studio_class.get_absolute_url }}">← {{ studio_class.name }}</a>
+<a class="crumb" href="{% url 'tracker:class_mode' %}?class_name={{ studio_class.name|urlencode }}">← {{ studio_class.name }} register</a>
 <div class="page-head">
   <div>
     <p class="eyebrow">Course fees</p>
@@ -39,7 +39,7 @@
     </table>
     </figure>
     <div class="form-actions">
-      <a role="button" class="ghost" href="{{ studio_class.get_absolute_url }}">Cancel</a>
+      <a role="button" class="ghost" href="{% url 'tracker:class_mode' %}?class_name={{ studio_class.name|urlencode }}">Cancel</a>
       <button type="submit">Charge ticked students</button>
     </div>
   </section>
