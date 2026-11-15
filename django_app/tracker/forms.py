@@ -169,7 +169,7 @@ class NextTermForm(forms.Form):
 
     new_name = forms.CharField(label="Next term's class name", max_length=100)
     old_name = forms.CharField(label="Rename this term's class to", max_length=100, required=False)
-    start_date = forms.DateField(label="Next term starts", required=False, widget=DateInput())
+    start_date = forms.DateField(label="Next term starts", initial=timezone.localdate, required=False, widget=DateInput())
     end_date = forms.DateField(label="Next term ends", required=False, widget=DateInput())
     old_end_date = forms.DateField(label="This term ends", required=False, widget=DateInput(),
                                    help_text="Once this date has passed, this term's class counts as finished.")
@@ -189,6 +189,7 @@ class NextTermForm(forms.Form):
         new_name = " ".join(data.get("new_name", "").split())
         old_name = " ".join((data.get("old_name") or "").split())
         data["new_name"], data["old_name"] = new_name, old_name
+        data["start_date"] = data.get("start_date") or timezone.localdate()
         others = StudioClass.objects.exclude(pk=self.studio_class.pk)
         if new_name == self.studio_class.name:
             if not old_name or old_name == new_name:
@@ -473,6 +474,30 @@ class StudioClassForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
+        data["start_date"] = data.get("start_date") or self.instance.start_date or timezone.localdate()
         if data.get("start_date") and data.get("end_date") and data["end_date"] < data["start_date"]:
             self.add_error("end_date", "The end date is before the start date.")
         return data
+
+
+class ClassProjectForm(forms.Form):
+    project = forms.ModelChoiceField(
+        queryset=Project.objects.order_by("name"),
+        help_text="Choose a project to load its materials for this class. Nothing is added or charged until you save the quantities on the next page.",
+    )
+    started_on = forms.DateField(label="Project start date", initial=timezone.localdate, widget=DateInput())
+
+    def __init__(self, *args, studio_class, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.studio_class = studio_class
+        self.fields["started_on"].initial = max(timezone.localdate(), studio_class.start_date or timezone.localdate())
+
+    def clean_started_on(self):
+        started_on = self.cleaned_data["started_on"]
+        if self.studio_class.start_date and started_on < self.studio_class.start_date:
+            raise forms.ValidationError("The project cannot start before this class's start date.")
+        if self.studio_class.end_date and started_on > self.studio_class.end_date:
+            raise forms.ValidationError("The project cannot start after this class's end date.")
+        if self.studio_class.status == "finished":
+            raise forms.ValidationError("This class has finished. Add the project to the current class instead.")
+        return started_on

@@ -9,8 +9,8 @@
     {% endif %}
   </header>
   <div class="panel-body">
-    <p>Materials held by at least 80% of active students stay visible whether paid or unpaid, until you archive them. New purchases, new pending items or any part-paid student automatically unarchive a material. Quantities include all purchases of that material in this class.</p>
-    <p>Payments clear oldest purchases first, including older debts. Pending means the quantity or weight is still blank and nothing has been charged for that item.</p>
+    <p>Materials allocated to at least 80% of active students stay visible until you archive them. Archive is available only when every student is paid or has no materials entered. New allocations or any unpaid balance automatically unarchive a material. Quantities include all purchases of that material in this class.</p>
+    <p>Payments clear oldest purchases first, including older debts. No materials entered means the quantity or weight was left blank and nothing has been charged. These entries can still be completed on the student's page.</p>
   </div>
   {% if material_grid.columns %}
   <figure>
@@ -26,8 +26,8 @@
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
             {% if archived_materials %}
               <button class="small ghost" name="action" value="restore">Restore</button>
-            {% elif column.part_paid %}
-              <span class="sub-text">Kept visible: part-paid</span>
+            {% elif column.has_unpaid %}
+              <span class="sub-text">Kept visible: unpaid balance</span>
             {% else %}
               <button class="small ghost" name="action" value="archive">Archive</button>
             {% endif %}
@@ -45,8 +45,9 @@
               {% if cell.purchases %}
                 <span class="badge {{ cell.tone }}">{{ cell.status }}</span>
                 <span class="sub-text">{% if cell.material.kind == "order" %}{{ cell.quantity|gbp }}{% else %}{{ cell.quantity|floatformat:"-2" }} {{ cell.material.unit_type }}{% endif %}</span>
+              {% else %}
+                <span class="unit">No materials entered</span>
               {% endif %}
-              {% if cell.pending %}<span class="badge">Pending ({{ cell.pending }})</span>{% endif %}
             {% else %}
               <span class="unit" aria-label="No material">—</span>
             {% endif %}

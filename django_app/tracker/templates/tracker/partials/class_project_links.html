@@ -1,7 +1,23 @@
+{% if allow_project_remove and request.GET.edit_projects == "1" %}
+  <p class="unit">Click a project to remove it from this class. Purchase history is kept.</p>
+{% endif %}
 <div class="btn-row class-project-links">
   {% for project in class_projects %}
-    <a role="button" class="small ghost" href="{% url 'tracker:project_list' %}?project={{ project.pk }}#project-{{ project.pk }}">{{ project.name }}</a>
+    <div class="btn-row">
+    {% if allow_project_remove and studio_class and request.GET.edit_projects == "1" %}
+      <form method="post" action="{% url 'tracker:class_project_remove' studio_class.pk project.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="small ghost" aria-label="Remove {{ project.name }} from this class">{{ project.name }} &times;</button>
+      </form>
+    {% else %}
+      <a role="button" class="small ghost" href="{% url 'tracker:project_list' %}?project={{ project.pk }}#project-{{ project.pk }}">{{ project.name }}</a>
+    {% endif %}
+    {% if allow_project_remove and studio_class %}
+      <span class="unit">Started {{ project.class_started_on|date:"j M Y" }}</span>
+    {% endif %}
+    </div>
   {% empty %}
-    <span class="unit">No projects added yet.</span>
+    <span class="unit">No active projects for this class.</span>
   {% endfor %}
 </div>

@@ -84,7 +84,7 @@ class StudioClass(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     sort_order = models.PositiveIntegerField(default=0)
-    start_date = models.DateField(null=True, blank=True)
+    start_date = models.DateField(default=timezone.localdate, null=True, blank=True)
     end_date = models.DateField(null=True, blank=True, help_text="After this date the class counts as finished.")
     notes = models.TextField(blank=True)
 
@@ -241,6 +241,18 @@ class Project(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ClassProject(models.Model):
+    studio_class = models.ForeignKey(StudioClass, on_delete=models.CASCADE, related_name="project_assignments")
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="class_assignments")
+    started_on = models.DateField(default=timezone.localdate)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["studio_class", "project"], name="unique_class_project"),
+        ]
 
 
 class Purchase(models.Model):

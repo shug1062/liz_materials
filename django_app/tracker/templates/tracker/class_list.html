@@ -34,6 +34,7 @@
         <a role="button" class="small ghost" href="{{ c.get_absolute_url }}#class-projects">Projects ({{ c.projects|length }})</a>
         {% if c.projects %}{% include "tracker/partials/class_project_links.html" with class_projects=c.projects %}{% endif %}
         <a role="button" class="small ghost" href="{% url 'tracker:class_materials' %}?class_name={{ c.name|urlencode }}&amp;next={{ request.get_full_path|urlencode }}">Add material to class</a>
+        <a role="button" class="small ghost" href="{% url 'tracker:class_project_add' c.pk %}?next={{ request.get_full_path|urlencode }}">Add project</a>
       </div>
     {% empty %}
       <p class="empty">No classes yet.</p>

@@ -5,15 +5,24 @@
   <div>
     <p class="eyebrow">Tap a name to add materials</p>
     <h1>{{ class_label }}</h1>
+    {% if studio_class.start_date %}<p class="unit">Class starts {{ studio_class.start_date|date:"j M Y" }}{% if studio_class.end_date %} · Ends {{ studio_class.end_date|date:"j M Y" }}{% endif %}</p>{% endif %}
   </div>
   <div class="btn-row">
+    {% if studio_class %}<a role="button" class="ghost" href="{% url 'tracker:class_project_add' studio_class.pk %}?next={{ request.get_full_path|urlencode }}">Add project</a>{% endif %}
     <a role="button" class="ghost" href="{% url 'tracker:class_materials' %}?class_name={{ class_name|urlencode }}&amp;next={{ request.get_full_path|urlencode }}">Add material to class</a>
     <a role="button" class="ghost" href="{% url 'tracker:sale_new' %}?class_name={{ class_name|urlencode }}">Record a sale</a>
   </div>
 </div>
 <section class="panel" id="class-projects">
-  <header><h3>Projects</h3></header>
-  <div class="body">{% include "tracker/partials/class_project_links.html" %}</div>
+  <header>
+    <h3>Projects</h3>
+    {% if studio_class %}
+      {% if class_projects or request.GET.edit_projects == "1" %}
+        <a role="button" class="small ghost" href="{{ project_edit_url }}">{% if request.GET.edit_projects == "1" %}Done{% else %}Edit{% endif %}</a>
+      {% endif %}
+    {% endif %}
+  </header>
+  <div class="body">{% include "tracker/partials/class_project_links.html" with allow_project_remove=True %}</div>
 </section>
 <div class="tile-grid">
   {% for s in students %}

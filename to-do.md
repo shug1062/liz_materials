@@ -1,10 +1,6 @@
 make what people are more onions
 
 
-
-
-
-
 -------
 
 add a way to add a cash payment for material or jewellery or course or

@@ -64,8 +64,26 @@ the full edit form.
 Projects linked through purchases or pending materials appear on the class
 register's class page and on class details. Each Classes row also shows a
 **Projects** button and named project links. Links open the corresponding
-project summary. These lists include historical linked projects; payment or
-material archiving does not remove a project's class association.
+project summary. These lists show only explicitly active projects dated within
+the class's current term, not old purchase history. **Add project** sits beside
+the class action buttons. It opens a project-selection page, then loads that
+project's materials into the student-by-material quantity grid for the selected
+class. Review quantities before saving; choosing a project alone creates no
+assignment or charges. **Add material to class** still opens the general basket.
+**Edit** at the side of the Projects section turns project names into removal
+buttons. Click a project to remove only that class association, keeping the
+project and all purchase/payment history; Undo and re-adding are supported.
+Edit mode stays on after removal; **Done** restores the normal project links.
+Adding project materials to a class also activates the project when the allocation
+date falls within that class's term. Backdated allocations outside the term do not.
+Project assignments stay with the original class when copying for next term.
+Undated existing current classes start on 15 November 2026; new classes default to
+today. On Windows, the launcher runs this migration against its own local database.
+Initial project assignments use the first purchase or pending-allocation date
+within each class's term. Projects with no qualifying records are not assumed to
+be active: use **Add project** to select them, enter their start date and review
+their material allocations.
+Already-finished classes are left unchanged, including any missing start dates.
 
 On **Projects**, use **Edit project & materials** to save a reusable list of
 materials with optional default quantities. **Add project materials to class**
@@ -96,17 +114,22 @@ the class allocation, completing an item and removing an item all offer Undo.
 
 The Class register's class page also shows a **Shared materials** grid for
 materials held by at least 80% of its active students (including pending
-allocations). Each student shows their quantity and Paid, Part-paid, Unpaid
-or Pending status. Payments use the same oldest-purchases-first allocation
+allocations). Each student shows their quantity and Paid, Part-paid or Unpaid
+status. Blank-quantity allocations with no purchases show **No materials entered**.
+They remain uncharged and can be completed on the student's page. Where purchases
+already exist, only their quantity and payment status are shown, without a Pending badge.
+Payments use the same oldest-purchases-first allocation
 as statements, including older debts; only purchases recorded in this class
 contribute to the displayed material quantities. Paid columns remain visible.
-Use **Archive** to hide an individual material for this class, or **View archive**
-to review and restore it. New purchases or pending allocations recorded after
-archiving, or any student with a part-paid amount for that material, automatically
+Use **Archive** to hide an individual material only when every active student is
+paid or has no materials entered; both unpaid and part-paid amounts prevent
+archiving. **View archive** lets you review and restore archived materials.
+New purchases or pending allocations recorded after
+archiving, or any student with an unpaid amount for that material, automatically
 unarchive it when the grid is opened. It appears provided it still meets the
 80% threshold. Newness uses the time the item was added, not its purchase date.
 Once reopened it stays unarchived after payment is completed; you can archive
-it again when no student is part-paid. Archiving does not change purchases or balances.
+it again when no student owes anything for it. Archiving does not change purchases or balances.
 
 ## Daily online prices
 

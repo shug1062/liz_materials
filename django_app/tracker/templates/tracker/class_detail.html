@@ -10,6 +10,7 @@
     {% if studio_class.notes %}<p class="lede">{{ studio_class.notes }}</p>{% endif %}
   </div>
   <div class="btn-row">
+    <a role="button" class="ghost" href="{% url 'tracker:class_project_add' studio_class.pk %}?next={{ request.get_full_path|urlencode }}">Add project</a>
     <a role="button" class="ghost" href="{% url 'tracker:class_materials' %}?class_name={{ studio_class.name|urlencode }}&amp;next={{ request.get_full_path|urlencode }}">Add material to class</a>
     <a role="button" class="ghost" href="{% url 'tracker:class_edit' studio_class.pk %}">Edit class</a>
     <a role="button" class="ghost" href="{% url 'tracker:class_charge' studio_class.pk %}">Charge course fee</a>
@@ -20,8 +21,13 @@
 </div>
 
 <section class="panel" id="class-projects">
-  <header><h3>Projects</h3></header>
-  <div class="body">{% include "tracker/partials/class_project_links.html" %}</div>
+  <header>
+    <h3>Projects</h3>
+    {% if class_projects or request.GET.edit_projects == "1" %}
+      <a role="button" class="small ghost" href="{{ project_edit_url }}">{% if request.GET.edit_projects == "1" %}Done{% else %}Edit{% endif %}</a>
+    {% endif %}
+  </header>
+  <div class="body">{% include "tracker/partials/class_project_links.html" with allow_project_remove=True %}</div>
 </section>
 <div class="report-grid">
   <section class="panel">

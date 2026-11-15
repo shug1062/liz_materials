@@ -20,7 +20,7 @@ from . import margins, reports, silver, statements, suppliers
 from .forms import MaterialForm
 from .models import (
     Category, DailyPriceRefresh, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass, StudioSettings,
-    estimated_unit_cost, PendingMaterial, ProjectMaterial, ClassMaterialArchive,
+    estimated_unit_cost, PendingMaterial, ProjectMaterial, ClassMaterialArchive, ClassProject,
 )
 
 
@@ -111,6 +111,7 @@ class ClassMaterialsTests(TestCase):
     def setUp(self):
         self.client.force_login(get_user_model().objects.create_user("materials", password="test-pass"))
         self.anne = Student.objects.create(name="Anne", class_name="Tue")
+        StudioClass.objects.filter(name="Tue").update(start_date=date(2026, 11, 15))
         self.bob = Student.objects.create(name="Bob", class_name="Tue")
         Student.objects.create(name="Archived", class_name="Tue", is_archived=True)
         Student.objects.create(name="Shop", class_name="Tue", is_sales_channel=True)
@@ -139,6 +140,42 @@ class ClassMaterialsTests(TestCase):
             data[f"{prefix}-quantity"] = row["form"]["quantity"].value() or ""
         return data, response
 
+    def test_project_chooser_loads_material_grid_before_any_records_are_saved(self):
+        studio_class = StudioClass.objects.get(name="Tue")
+        chooser = reverse("tracker:class_project_add", args=[studio_class.pk])
+        back = reverse("tracker:class_mode") + "?class_name=Tue"
+        response = self.client.get(chooser, {"next": back})
+        self.assertContains(response, "Select project for Tue")
+        self.assertContains(response, "Review project materials")
+        self.assertNotContains(response, "Quick add")
+        invalid = self.client.post(chooser, {"started_on": "2026-11-15"})
+        self.assertFormError(invalid.context["form"], "project", "This field is required.")
+        invalid = self.client.post(chooser, {"project": self.project.pk, "started_on": "2026-11-14"})
+        self.assertFormError(invalid.context["form"], "started_on",
+                             "The project cannot start before this class's start date.")
+        response = self.client.post(chooser, {
+            "project": self.project.pk, "started_on": "2026-11-15", "next": back,
+        }, follow=True)
+        self.assertTemplateUsed(response, "tracker/class_materials.html")
+        self.assertEqual(response.context["project"], self.project)
+        self.assertEqual(response.context["form"]["class_name"].value(), "Tue")
+        self.assertEqual(response.context["back"], back)
+        self.assertEqual(len(response.context["review_students"]), 2)
+        self.assertEqual({column["material"] for column in response.context["review_columns"]},
+                         {self.rings, self.silver})
+        self.assertEqual(response.context["form"]["purchase_date"].value(), "2026-11-15")
+        self.assertFalse(Purchase.objects.exists())
+        self.assertFalse(PendingMaterial.objects.exists())
+        self.assertFalse(ClassProject.objects.exists())
+        data = {**self.data, "row_ids": response.context["row_ids"], "next": back}
+        for row in response.context["rows"]:
+            data[f'{row["form"].prefix}-include'] = "on"
+            data[f'{row["form"].prefix}-quantity'] = row["form"]["quantity"].value() or ""
+        self.assertRedirects(self.client.post(self.url, data), back)
+        self.assertEqual(Purchase.objects.count(), 2)
+        self.assertEqual(PendingMaterial.objects.count(), 2)
+        self.assertEqual(ClassProject.objects.get().project, self.project)
+
     def test_project_defaults_review_and_mixed_purchase_pending_undo(self):
         data, response = self.review()
         self.assertEqual(len(response.context["rows"]), 4)
@@ -154,9 +191,29 @@ class ClassMaterialsTests(TestCase):
         self.assertEqual((purchase.quantity, purchase.total_cost), (Decimal("3.25"), Decimal("7.80")))
         self.assertEqual((purchase.class_name, purchase.purchase_date, purchase.notes),
                          ("Tue", date(2026, 11, 15), "Class project"))
+        assignment = ClassProject.objects.get(project=self.project)
+        self.assertEqual((assignment.studio_class.name, assignment.started_on), ("Tue", date(2026, 11, 15)))
         self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
         self.assertFalse(Purchase.objects.exists())
         self.assertFalse(PendingMaterial.objects.exists())
+        self.assertFalse(ClassProject.objects.exists())
+
+    def test_project_allocation_reactivates_but_backdated_history_does_not(self):
+        studio_class = StudioClass.objects.get(name="Tue")
+        assignment = ClassProject.objects.create(
+            studio_class=studio_class, project=self.project, started_on=date(2026, 11, 15), is_active=False,
+        )
+        data, _ = self.review(purchase_date="2026-01-14")
+        self.client.post(self.url, data)
+        assignment.refresh_from_db()
+        self.assertFalse(assignment.is_active)
+        data, _ = self.review()
+        self.client.post(self.url, data)
+        assignment.refresh_from_db()
+        self.assertTrue(assignment.is_active)
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        assignment.refresh_from_db()
+        self.assertFalse(assignment.is_active)
 
     def test_single_material_defaults_blank_pending_and_skip(self):
         url = reverse("tracker:class_materials")
@@ -376,6 +433,7 @@ class SharedMaterialGridTests(TestCase):
         self.purchase(self.students[0])
         self.assertEqual(self.grid()["columns"], [])
         PendingMaterial.objects.create(student=self.students[3], material=self.material, class_name="Tue")
+        PendingMaterial.objects.create(student=self.students[0], material=self.material, class_name="Tue")
         archived = Student.objects.create(name="Archived", class_name="Tue", is_archived=True)
         channel = Student.objects.create(name="Shop", class_name="Tue", is_sales_channel=True)
         for student in (archived, channel):
@@ -385,6 +443,11 @@ class SharedMaterialGridTests(TestCase):
         self.assertEqual(grid["rows"][0]["cells"][0]["quantity"], Decimal("2"))
         self.assertEqual(grid["rows"][3]["cells"][0]["pending"], 1)
         self.assertIsNone(grid["rows"][4]["cells"][0])
+        response = self.client.get(self.url)
+        self.assertContains(response, '<span class="unit">No materials entered</span>', count=1, html=True)
+        self.assertNotContains(response, "Pending (")
+        self.assertContains(response, '<span class="sub-text">2 item</span>', count=1, html=True)
+        self.assertEqual(PendingMaterial.objects.count(), 2)
         Student.objects.create(name="Sixth", class_name="Tue")
         self.assertEqual(self.grid()["columns"], [])  # Four of six is below 80%.
 
@@ -407,6 +470,7 @@ class SharedMaterialGridTests(TestCase):
     def test_archive_restore_is_class_specific_and_survives_roster_changes(self):
         for student in self.students:
             self.purchase(student)
+            Payment.objects.create(student=student, amount=Decimal("10"))
         url = reverse("tracker:class_material_archive", args=[self.material.pk])
         self.assertEqual(self.client.get(url).status_code, 405)
         self.client.post(url, {"class_name": "Tue", "action": "archive"})
@@ -443,6 +507,7 @@ class SharedMaterialGridTests(TestCase):
     def test_new_allocations_reopen_archive_and_can_be_archived_again(self):
         for student in self.students:
             self.purchase(student)
+            Payment.objects.create(student=student, amount=Decimal("10"))
         url = reverse("tracker:class_material_archive", args=[self.material.pk])
         self.client.post(url, {"class_name": "Tue", "action": "archive"})
         self.assertEqual(self.grid()["columns"], [])
@@ -452,6 +517,7 @@ class SharedMaterialGridTests(TestCase):
         self.assertEqual(len(self.grid()["columns"]), 1)
         self.assertEqual(self.grid()["archive_count"], 0)
         self.assertEqual(self.grid(archive=True)["columns"], [])
+        Payment.objects.create(student=self.students[0], amount=Decimal("20"))
         self.client.post(url, {"class_name": "Tue", "action": "archive"})
         self.assertGreater(ClassMaterialArchive.objects.get().archived_at, new_purchase.created_at)
         self.assertEqual(self.grid()["columns"], [])
@@ -462,23 +528,44 @@ class SharedMaterialGridTests(TestCase):
         self.assertEqual(len(self.grid()["columns"]), 1)
         self.assertFalse(ClassMaterialArchive.objects.exists())
 
-    def test_part_paid_reopens_without_new_purchases_and_stays_open_when_paid(self):
+    def test_any_debt_reopens_without_new_purchases_and_stays_open_when_paid(self):
         for student in self.students:
             self.purchase(student)
             Payment.objects.create(student=student, amount=Decimal("10"))
         url = reverse("tracker:class_material_archive", args=[self.material.pk])
         self.client.post(url, {"class_name": "Tue", "action": "archive"})
         self.assertEqual(self.grid()["columns"], [])
-        Payment.objects.filter(student=self.students[0]).update(amount=Decimal("5"))
-        self.assertEqual(len(self.grid()["columns"]), 1)
-        self.assertEqual(self.grid()["rows"][0]["cells"][0]["status"], "Part-paid")
-        self.assertEqual(self.grid()["archive_count"], 0)
-        self.assertFalse(ClassMaterialArchive.objects.exists())
-        Payment.objects.filter(student=self.students[0]).update(amount=Decimal("10"))
-        self.assertEqual(len(self.grid()["columns"]), 1)
-        self.assertEqual(self.grid()["rows"][0]["cells"][0]["status"], "Paid")
+        for amount, status in ((Decimal("0"), "Unpaid"), (Decimal("5"), "Part-paid")):
+            with self.subTest(status=status):
+                Payment.objects.filter(student=self.students[0]).update(amount=amount)
+                self.assertEqual(len(self.grid()["columns"]), 1)
+                self.assertEqual(self.grid()["rows"][0]["cells"][0]["status"], status)
+                self.assertEqual(self.grid()["archive_count"], 0)
+                self.assertFalse(ClassMaterialArchive.objects.exists())
+                response = self.client.get(self.url)
+                self.assertContains(response, "Kept visible: unpaid balance")
+                self.assertNotContains(response, 'value="archive"')
+                response = self.client.post(url, {"class_name": "Tue", "action": "archive"}, follow=True)
+                self.assertContains(response, "Cannot archive")
+                self.assertFalse(ClassMaterialArchive.objects.exists())
+                Payment.objects.filter(student=self.students[0]).update(amount=Decimal("10"))
+                self.assertEqual(len(self.grid()["columns"]), 1)
+                self.assertEqual(self.grid()["rows"][0]["cells"][0]["status"], "Paid")
+                self.client.post(url, {"class_name": "Tue", "action": "archive"})
+                self.assertEqual(self.grid()["columns"], [])
+
+    def test_paid_and_blank_entries_allow_archiving(self):
+        for student in self.students[:3]:
+            self.purchase(student)
+            Payment.objects.create(student=student, amount=Decimal("10"))
+        PendingMaterial.objects.create(student=self.students[3], material=self.material, class_name="Tue")
+        response = self.client.get(self.url)
+        self.assertContains(response, 'value="archive"')
+        self.assertNotContains(response, "Kept visible:")
+        url = reverse("tracker:class_material_archive", args=[self.material.pk])
         self.client.post(url, {"class_name": "Tue", "action": "archive"})
         self.assertEqual(self.grid()["columns"], [])
+        self.assertEqual(ClassMaterialArchive.objects.count(), 1)
 
 
 class ViewTests(TestCase):
@@ -1160,13 +1247,30 @@ class SilverPriceTests(TestCase):
 
 
 class ProjectTests(TestCase):
-    def test_class_projects_include_pending_and_purchases_once_and_link_to_summary(self):
+    def test_only_explicit_active_projects_in_current_term_are_shown(self):
         student = Student.objects.create(name="Amy", class_name="Tue")
         studio_class = StudioClass.objects.get(name="Tue")
+        today = timezone.localdate()
+        studio_class.start_date = today
+        studio_class.end_date = today + timedelta(days=30)
+        studio_class.save()
         material = make_material()
         purchased_project = Project.objects.create(name="Ring")
         pending_project = Project.objects.create(name="Pendant")
         unrelated_project = Project.objects.create(name="Other class project")
+        previous_project = Project.objects.create(name="Previous term")
+        removed_project = Project.objects.create(name="Removed project")
+        later_project = Project.objects.create(name="Later term")
+        for project, started_on, active in (
+            (purchased_project, today, True), (pending_project, today, True),
+            (previous_project, today - timedelta(days=1), True),
+            (removed_project, today, False), (later_project, today + timedelta(days=31), True),
+        ):
+            ClassProject.objects.create(
+                studio_class=studio_class, project=project, started_on=started_on, is_active=active,
+            )
+        other_class = StudioClass.objects.create(name="Wed")
+        ClassProject.objects.create(studio_class=other_class, project=unrelated_project)
         for _ in range(2):
             purchase = Purchase(student=student, material=material, quantity=Decimal("1"), project=purchased_project)
             purchase.set_price(reprice=True)
@@ -1179,7 +1283,14 @@ class ProjectTests(TestCase):
             response = self.client.get(url)
             self.assertEqual(response.context["class_projects"], expected)
             self.assertContains(response, f'?project={pending_project.pk}#project-{pending_project.pk}')
-            self.assertNotContains(response, unrelated_project.name)
+            for project in (unrelated_project, previous_project, removed_project, later_project):
+                self.assertNotContains(response, project.name)
+            self.assertContains(response, reverse("tracker:class_project_add", args=[studio_class.pk]))
+            if url != studio_class.get_absolute_url():
+                self.assertContains(response,
+                    f'<a role="button" class="ghost" href="{reverse("tracker:class_project_add", args=[studio_class.pk])}'
+                    '?next=/class/%3Fclass_name%3DTue">Add project</a>', html=True)
+            self.assertNotContains(response, reverse("tracker:class_project_remove", args=[studio_class.pk, pending_project.pk]))
         response = self.client.get(reverse("tracker:class_list"))
         row = next(c for c in response.context["classes"] if c.pk == studio_class.pk)
         self.assertEqual(row.projects, expected)
@@ -1189,7 +1300,129 @@ class ProjectTests(TestCase):
         self.assertContains(response, f'id="project-{pending_project.pk}" open')
         pending.delete()
         response = self.client.get(studio_class.get_absolute_url())
-        self.assertEqual(response.context["class_projects"], [purchased_project])
+        self.assertEqual(response.context["class_projects"], expected)
+        studio_class.start_date = today - timedelta(days=10)
+        studio_class.end_date = today - timedelta(days=1)
+        studio_class.save()
+        self.assertEqual(self.client.get(studio_class.get_absolute_url()).context["class_projects"], [])
+
+    def test_remove_and_undo_preserve_history(self):
+        student = Student.objects.create(name="Amy", class_name="Tue")
+        studio_class = StudioClass.objects.get(name="Tue")
+        project = Project.objects.create(name="Ring")
+        material = make_material()
+        pending = PendingMaterial.objects.create(student=student, material=material, project=project, class_name="Tue")
+        purchase = Purchase(student=student, material=material, project=project, quantity=Decimal("1"))
+        purchase.set_price(reprice=True)
+        purchase.save()
+        Payment.objects.create(student=student, amount=Decimal("1"))
+        ClassProject.objects.create(studio_class=studio_class, project=project)
+        remove_url = reverse("tracker:class_project_remove", args=[studio_class.pk, project.pk])
+        back = reverse("tracker:class_mode") + "?class_name=Tue"
+        self.assertEqual(self.client.get(remove_url).status_code, 405)
+        self.assertRedirects(self.client.post(remove_url, {"next": back}), back)
+        self.assertEqual(self.client.get(back).context["class_projects"], [])
+        self.assertEqual((Purchase.objects.count(), Payment.objects.count(), PendingMaterial.objects.count()), (1, 1, 1))
+        pending.refresh_from_db()
+        purchase.refresh_from_db()
+        self.assertEqual((pending.project, purchase.project), (project, project))
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        self.assertEqual(self.client.get(back).context["class_projects"], [project])
+
+    def test_project_edit_mode_replaces_links_with_removal_and_stays_open(self):
+        studio_class = StudioClass.objects.create(name="Tue")
+        project = Project.objects.create(name="Ring")
+        ClassProject.objects.create(studio_class=studio_class, project=project)
+        remove_url = reverse("tracker:class_project_remove", args=[studio_class.pk, project.pk])
+        project_link = f'?project={project.pk}#project-{project.pk}'
+        for url in (reverse("tracker:class_mode") + "?class_name=Tue&archive=1", studio_class.get_absolute_url()):
+            response = self.client.get(url)
+            self.assertContains(response, project_link)
+            self.assertNotContains(response, remove_url)
+            edit_url = response.context["project_edit_url"]
+            response = self.client.get(edit_url)
+            self.assertContains(response, remove_url)
+            self.assertNotContains(response, project_link)
+            self.assertContains(response, 'aria-label="Remove Ring from this class"')
+            done_url = response.context["project_edit_url"]
+            self.assertNotIn("edit_projects", done_url)
+            if "archive" in url:
+                self.assertIn("archive=1", done_url)
+                self.assertIn("class_name=Tue", done_url)
+            response = self.client.post(remove_url, {"next": edit_url}, follow=True)
+            self.assertContains(response, "No active projects for this class.")
+            self.assertContains(response, ">Done</a>")
+            response = self.client.get(done_url)
+            self.assertNotContains(response, ">Done</a>")
+            self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        response = self.client.get(reverse("tracker:class_list"), {"edit_projects": "1"})
+        self.assertContains(response, project_link)
+        self.assertNotContains(response, remove_url)
+
+    def test_migration_dates_and_seeds_only_current_purchase_and_pending_projects(self):
+        from importlib import import_module
+        from django.apps import apps
+
+        today = date(2026, 11, 15)
+        studio_class = StudioClass.objects.create(name="Undated", start_date=None)
+        finished_class = StudioClass.objects.create(
+            name="Finished", start_date=None, end_date=today - timedelta(days=1),
+        )
+        dated_class = StudioClass.objects.create(name="Dated", start_date=date(2026, 9, 1))
+        student = Student.objects.create(name="Amy", class_name=studio_class.name)
+        material = make_material()
+        old_project = Project.objects.create(name="Old")
+        current_project = Project.objects.create(name="Current")
+        pending_project = Project.objects.create(name="Pending")
+        for project, when in ((old_project, today - timedelta(days=1)), (current_project, today)):
+            purchase = Purchase(student=student, material=material, project=project,
+                                quantity=Decimal("1"), purchase_date=when)
+            purchase.set_price(reprice=True)
+            purchase.save()
+        PendingMaterial.objects.create(student=student, material=material, project=pending_project,
+                                       class_name=studio_class.name, purchase_date=today)
+        PendingMaterial.objects.create(student=student, material=material, project=current_project,
+                                       class_name=studio_class.name, purchase_date=today)
+        PendingMaterial.objects.create(student=student, material=material, project=old_project,
+                                       class_name=finished_class.name, purchase_date=today - timedelta(days=5))
+        migration = import_module("tracker.migrations.0019_seed_current_class_projects")
+        migration.seed_current_projects(apps, Mock(connection=connection))
+        studio_class.refresh_from_db()
+        self.assertEqual(studio_class.start_date, today)
+        finished_class.refresh_from_db()
+        dated_class.refresh_from_db()
+        self.assertIsNone(finished_class.start_date)
+        self.assertEqual(dated_class.start_date, date(2026, 9, 1))
+        self.assertFalse(finished_class.project_assignments.exists())
+        self.assertEqual(set(ClassProject.objects.values_list("project_id", flat=True)),
+                         {current_project.pk, pending_project.pk})
+        self.assertEqual(Purchase.objects.count(), 2)
+
+    def test_readding_old_assignment_uses_current_term_date_and_survives_rename(self):
+        today = timezone.localdate()
+        studio_class = StudioClass.objects.create(name="Tue")
+        project = Project.objects.create(name="Ring")
+        assignment = ClassProject.objects.create(
+            studio_class=studio_class, project=project, started_on=today - timedelta(days=90),
+        )
+        student = Student.objects.create(name="Amy", class_name="Tue")
+        material = make_material()
+        ProjectMaterial.objects.create(project=project, material=material, default_quantity=Decimal("1"))
+        self.assertEqual(self.client.get(studio_class.get_absolute_url()).context["class_projects"], [])
+        response = self.client.post(reverse("tracker:class_project_add", args=[studio_class.pk]),
+                                    {"project": project.pk, "started_on": today}, follow=True)
+        prefix = f"s{student.pk}-m{material.pk}"
+        self.client.post(reverse("tracker:project_class_materials", args=[project.pk]), {
+            "class_name": "Tue", "purchase_date": today, "row_ids": response.context["row_ids"],
+            f"{prefix}-include": "on", f"{prefix}-quantity": "1",
+        })
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.started_on, today)
+        self.client.post(reverse("tracker:class_edit", args=[studio_class.pk]),
+                         {"name": "Tuesday", "start_date": today})
+        studio_class.refresh_from_db()
+        self.assertEqual(studio_class.name, "Tuesday")
+        self.assertEqual(self.client.get(studio_class.get_absolute_url()).context["class_projects"], [project])
 
     def test_project_costs_and_delete_keeps_purchases(self):
         project = Project.objects.create(name="Ring")
@@ -2756,6 +2989,10 @@ class NextTermTests(TestCase):
         self.url = reverse("tracker:class_next_term", args=[self.autumn.pk])
 
     def test_same_name_next_term_keeps_history_and_debt(self):
+        project = Project.objects.create(name="Autumn ring")
+        assignment = ClassProject.objects.create(
+            studio_class=self.autumn, project=project, started_on=date(2026, 10, 1),
+        )
         form = self.client.get(self.url).context["form"]
         self.assertEqual(form.initial["old_name"], "Thurs 11am – Autumn 2026")
         response = self.client.post(self.url, {
@@ -2773,6 +3010,9 @@ class NextTermTests(TestCase):
         self.assertEqual((spring.start_date, spring.sort_order), (date(2027, 1, 7), 0))
         self.assertEqual((self.amy.class_name, self.ben.class_name), ("Thurs 11am", "Thurs 11am – Autumn 2026"))
         self.assertEqual(self.purchase.class_name, "Thurs 11am – Autumn 2026")  # sales stay with the old term
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.studio_class_id, self.autumn.pk)
+        self.assertEqual(self.client.get(spring.get_absolute_url()).context["class_projects"], [])
 
         amy = Student.objects.with_balances().get(pk=self.amy.pk)
         self.assertEqual(amy.balance, Decimal("-5.00"))  # the debt moves with her
@@ -2786,6 +3026,7 @@ class NextTermTests(TestCase):
         self.assertEqual((self.autumn.name, self.purchase.class_name, self.ben.class_name),
                          ("Thurs 11am", "Thurs 11am", "Thurs 11am"))
         self.assertEqual(StudioClass.objects.count(), 1)
+        self.assertEqual(ClassProject.objects.get().studio_class_id, self.autumn.pk)
 
     def test_new_name_leaves_this_term_alone(self):
         self.client.post(self.url, {"new_name": "Thurs 11am Spring", "old_name": "", "old_end_date": "2026-12-10",

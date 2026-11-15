@@ -25,12 +25,12 @@ from .forms import (
     PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm, PurchaseStudentForm,
     SaleFilterForm, SaleForm, SilverPriceForm, StudentForm,
     StudioClassForm, TermDatesForm, CourseFeeForm, NextTermForm,
-    ClassMaterialsForm, ClassMaterialQuantityForm, PendingMaterialForm, ProjectMaterialFormSet,
+    ClassMaterialsForm, ClassMaterialQuantityForm, PendingMaterialForm, ProjectMaterialFormSet, ClassProjectForm,
     material_quantity_label, material_entry_label,
 )
 from .models import (
     ZERO, Category, DailyPriceRefresh, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass,
-    StudioSettings, PendingMaterial, ClassMaterialArchive, money,
+    StudioSettings, PendingMaterial, ClassMaterialArchive, ClassProject, money,
 )
 
 NO_CLASS = "No class assigned"
@@ -551,7 +551,7 @@ def _class_url(class_name):
     return f"{reverse('tracker:class_mode')}?{urlencode({'class_name': class_name})}"
 
 
-def _shared_material_grid(students, class_name, archived):
+def _class_material_columns(students, class_name):
     columns = {}
 
     def cell_for(student, material, added_at):
@@ -574,11 +574,16 @@ def _shared_material_grid(students, class_name, archived):
             if pending.class_name == class_name and pending.material.kind != Material.Kind.LESSON:
                 cell_for(student, pending.material, pending.created_at)["pending"] += 1
     for column in columns.values():
-        column["part_paid"] = any(0 < cell["unpaid"] < cell["charged"] for cell in column["cells"].values())
+        column["has_unpaid"] = any(cell["unpaid"] > ZERO for cell in column["cells"].values())
+    return columns
+
+
+def _shared_material_grid(students, class_name, archived):
+    columns = _class_material_columns(students, class_name)
     archives = []
     for entry in ClassMaterialArchive.objects.filter(class_name=class_name).select_related("material"):
         column = columns.get(entry.material_id)
-        if column and (column["latest_added"] > entry.archived_at or column["part_paid"]):
+        if column and (column["latest_added"] > entry.archived_at or column["has_unpaid"]):
             # Once reopened, completing a payment must not silently archive the material again.
             ClassMaterialArchive.objects.filter(pk=entry.pk, archived_at=entry.archived_at).delete()
         else:
@@ -615,18 +620,84 @@ def _shared_material_grid(students, class_name, archived):
 
 def _projects_by_class(class_names):
     class_names = set(class_names)
-    links = set(Purchase.objects.filter(class_name__in=class_names, project__isnull=False)
-                .order_by().values_list("class_name", "project_id"))
-    links.update(PendingMaterial.objects.filter(class_name__in=class_names, project__isnull=False)
-                 .order_by().values_list("class_name", "project_id"))
-    projects = Project.objects.in_bulk({project_id for _, project_id in links})
     grouped = {name: [] for name in class_names}
-    for name, project_id in links:
-        if project_id in projects:
-            grouped[name].append(projects[project_id])
+    assignments = ClassProject.objects.filter(
+        studio_class__name__in=class_names, is_active=True,
+    ).filter(
+        Q(studio_class__start_date__isnull=True) | Q(started_on__gte=F("studio_class__start_date")),
+    ).filter(
+        Q(studio_class__end_date__isnull=True) |
+        Q(studio_class__end_date__gte=timezone.localdate(), started_on__lte=F("studio_class__end_date")),
+    ).select_related("studio_class", "project")
+    for assignment in assignments:
+        assignment.project.class_started_on = assignment.started_on
+        grouped[assignment.studio_class.name].append(assignment.project)
     for items in grouped.values():
         items.sort(key=lambda project: (project.name.casefold(), project.pk))
     return grouped
+
+
+def _activate_class_project(studio_class, project, started_on):
+    """Return created/original objects so the enclosing action can also undo the assignment."""
+    if (studio_class.start_date and started_on < studio_class.start_date) or (
+        studio_class.end_date and (started_on > studio_class.end_date or studio_class.status == "finished")
+    ):
+        return [], []
+    assignment, created = ClassProject.objects.get_or_create(
+        studio_class=studio_class, project=project, defaults={"started_on": started_on},
+    )
+    if created:
+        return [assignment], []
+    original = ClassProject.objects.get(pk=assignment.pk)
+    within_term = (
+        (not studio_class.start_date or assignment.started_on >= studio_class.start_date) and
+        (not studio_class.end_date or assignment.started_on <= studio_class.end_date)
+    )
+    assignment.started_on = (
+        min(assignment.started_on, started_on) if assignment.is_active and within_term else started_on
+    )
+    assignment.is_active = True
+    assignment.save(update_fields=["is_active", "started_on"])
+    return [], [original]
+
+
+def class_project_add(request, pk):
+    studio_class = get_object_or_404(StudioClass, pk=pk)
+    back = _next_url(request, studio_class.get_absolute_url())
+    form = ClassProjectForm(request.POST if request.method == "POST" else None, studio_class=studio_class)
+    if request.method == "POST" and form.is_valid():
+        review_url = reverse("tracker:project_class_materials", args=[form.cleaned_data["project"].pk])
+        query = urlencode({
+            "class_name": studio_class.name, "purchase_date": form.cleaned_data["started_on"].isoformat(),
+            "review": "1", "next": back,
+        })
+        return redirect(f"{review_url}?{query}#class-material-review")
+    return render(request, "tracker/form_page.html", {
+        "form": form, "title": f"Select project for {studio_class}", "cancel_url": back,
+        "submit_label": "Review project materials",
+    })
+
+
+@require_POST
+def class_project_remove(request, pk, project_pk):
+    studio_class = get_object_or_404(StudioClass, pk=pk)
+    assignment = get_object_or_404(ClassProject, studio_class=studio_class, project_id=project_pk, is_active=True)
+    with transaction.atomic():
+        undo.remember(request, f"Removed {assignment.project} from {studio_class}. Purchase history is unchanged.",
+                      restore=[assignment])
+        assignment.is_active = False
+        assignment.save(update_fields=["is_active"])
+    return redirect(_next_url(request, studio_class.get_absolute_url()))
+
+
+def _class_project_edit_url(request):
+    params = request.GET.copy()
+    if params.get("edit_projects") == "1":
+        params.pop("edit_projects")
+    else:
+        params["edit_projects"] = "1"
+    query = f"?{params.urlencode()}" if params else ""
+    return f"{request.path}{query}#class-projects"
 
 
 def class_mode(request):
@@ -646,8 +717,10 @@ def class_mode(request):
     return render(request, "tracker/class_mode.html", {
         "class_name": class_name,
         "class_label": class_name or NO_CLASS,
+        "studio_class": StudioClass.objects.filter(name=class_name).first(),
         "students": students,
         "class_projects": _projects_by_class([class_name])[class_name],
+        "project_edit_url": _class_project_edit_url(request),
         "material_grid": _shared_material_grid(students, class_name, archived),
         "archived_materials": archived,
     })
@@ -663,9 +736,17 @@ def class_material_archive(request, material_pk):
         get_object_or_404(StudioClass, name=class_name)
     action = request.POST.get("action")
     if action == "archive":
-        ClassMaterialArchive.objects.update_or_create(
-            class_name=class_name, material=material, defaults={"archived_at": timezone.now()},
-        )
+        with transaction.atomic():
+            students = statements.with_history(
+                Student.objects.active().filter(class_name=class_name, is_sales_channel=False),
+            ).prefetch_related("pending_materials__material")
+            column = _class_material_columns(students, class_name).get(material.pk)
+            if column and column["has_unpaid"]:
+                messages.error(request, f"Cannot archive {material.name}: a student still has an unpaid balance for it.")
+                return redirect(_next_url(request, _class_url(class_name)))
+            ClassMaterialArchive.objects.update_or_create(
+                class_name=class_name, material=material, defaults={"archived_at": timezone.now()},
+            )
         messages.success(request, f"Archived {material.name} for {class_name or NO_CLASS}. Purchases are unchanged.")
     elif action == "restore":
         ClassMaterialArchive.objects.filter(class_name=class_name, material=material).delete()
@@ -832,12 +913,19 @@ def class_materials(request, project_pk=None):
                     if not created:
                         form.add_error(None, "Select at least one material to add.")
                     if not form.errors and not any(row["form"].errors for row in rows):
+                        assignment_created, assignment_restore = [], []
                         with transaction.atomic():
                             for item in created:
                                 item.save()
+                            selected_project = project or values.get("project")
+                            if selected_project and values["class_name"]:
+                                studio_class = StudioClass.objects.get(name=values["class_name"])
+                                assignment_created, assignment_restore = _activate_class_project(
+                                    studio_class, selected_project, values["purchase_date"],
+                                )
                         pending = sum(isinstance(item, PendingMaterial) for item in created)
                         undo.remember(request, f"Added {len(created) - pending} purchases and {pending} pending materials.",
-                                      created=created)
+                                      created=[*created, *assignment_created], restore=assignment_restore)
                         return redirect(back)
     return render(request, "tracker/class_materials.html", {
         "form": form, "project": project, "rows": rows, "row_ids": row_ids, "back": back,
@@ -1548,6 +1636,7 @@ def class_detail(request, pk):
     return render(request, "tracker/class_detail.html", {
         "studio_class": studio_class,
         "class_projects": _projects_by_class([studio_class.name])[studio_class.name],
+        "project_edit_url": _class_project_edit_url(request),
         "students": _with_carried_debt(
             Student.objects.with_balances().active().filter(class_name=studio_class.name), studio_class.name),
         "candidates": _add_candidates(studio_class, ""),
