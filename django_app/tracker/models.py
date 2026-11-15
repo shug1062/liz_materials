@@ -1,5 +1,6 @@
 from decimal import ROUND_HALF_UP, Decimal
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import DecimalField, OuterRef, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
@@ -203,6 +204,23 @@ class Material(models.Model):
         price = self.cost_per_item * (1 + self.markup_percentage / 100)
         return price.quantize(UNIT_PRICE_PLACES, rounding=ROUND_HALF_UP)
 
+    def apply_supplier_price(self, price, weight, checked_on):
+        price = self._meta.get_field("base_price").clean(price, self)
+        weight = self._meta.get_field("weight_per_unit").clean(weight, self)
+        if price <= ZERO or (weight is not None and weight <= ZERO):
+            raise ValidationError("Supplier prices and item weights must be greater than zero.")
+        if self.pricing_type == self.PricingType.PER_GRAM_ITEM and weight is None:
+            raise ValidationError("The supplier did not provide an item weight.")
+        changed = price != self.base_price or weight != self.weight_per_unit
+        if changed:
+            PriceChange.objects.create(
+                material=self, old_price=self.base_price, new_price=price,
+                old_weight=self.weight_per_unit, new_weight=weight,
+            )
+        self.base_price, self.weight_per_unit, self.price_date = price, weight, checked_on
+        self.save(update_fields=["base_price", "weight_per_unit", "price_date", "last_updated"])
+        return changed
+
     @classmethod
     def course_fee(cls) -> "Material":
         """Hidden lesson item that term and course fees are charged against (the amount is set per charge)."""
@@ -342,6 +360,16 @@ class PriceChange(models.Model):
         if not self.old_price:
             return None
         return (self.new_price - self.old_price) / self.old_price * 100
+
+
+class DailyPriceRefresh(models.Model):
+    day = models.DateField(primary_key=True)
+    started_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    total = models.PositiveIntegerField(default=0)
+    checked = models.PositiveIntegerField(default=0)
+    updated = models.PositiveIntegerField(default=0)
+    errors = models.JSONField(default=list, blank=True)
 
 
 class SilverPrice(models.Model):

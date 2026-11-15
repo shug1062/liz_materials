@@ -52,7 +52,15 @@
 
 {% for group in sections %}
 <section class="panel category-section{% if group.quick %} quick-section{% endif %}" id="{{ group.anchor }}">
-  <header><h3 class="capitalise">{{ group.name }}</h3><span class="badge">{{ group.materials|length }}</span></header>
+  <header>
+    <h3 class="capitalise">{{ group.name }} <span class="badge">{{ group.materials|length }}</span></h3>
+    {% if group.materials %}
+    <button type="button" class="small ghost" data-edit-material-section
+            hx-get="{% url 'tracker:material_section_edit' group.anchor %}?inactive={% if show_inactive %}1{% else %}0{% endif %}"
+            hx-target="closest section" hx-swap="outerHTML"
+            aria-label="Edit {{ group.name }} section">Edit section</button>
+    {% endif %}
+  </header>
   {% if group.quick and not group.materials %}
   <div class="body empty">Nothing ticked yet, so student pages show the 12 most-bought materials. Press “+ Quick add” on any material below to choose your own.</div>
   {% else %}

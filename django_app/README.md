@@ -8,6 +8,23 @@ purchases, newest first. The financial overview is under **Dashboard** at
 `/dashboard/`, not the home page. Reports and material costs are accessible from
 the shared menu; there is no separate student-facing mode.
 
+**Students → Purchase** and **Record purchase** on a student's details page
+open the same basket as **Class register → Class → Student**. Both routes offer
+Quick add, material search, multiple items, payments and purchase history.
+An optional **Purchase note** is saved on every item added in that basket;
+payment notes remain separate. Save and Cancel return to the originating
+student/class view. Existing purchases still use the individual edit form.
+
+**Pay cash** and **Pay card** open the payment form with the student and chosen
+method selected, but no amount filled in. Both buttons remain available when
+the student is settled or already in credit, for advance payments.
+Enter the amount actually received and press **Save payment**.
+The payment form's **£5**, **£10** and **£20** shortcuts fill the amount without
+saving it; you can still change the amount before confirming.
+Partial payments, full payments and overpayments are supported; overpayments
+remain as account credit. Cancel records nothing. The basket's payment amount
+also starts blank rather than assuming the outstanding balance.
+
 To change Quick add items:
 
 1. Open **Materials** and click **Edit** beside a material.
@@ -18,6 +35,38 @@ When any active materials are ticked, Quick add shows those materials. If none
 are ticked, it automatically shows up to 12 active materials ranked by purchase
 count (alphabetically for ties). Edit the same material to change its name,
 price or unit; previous purchase prices remain unchanged.
+
+Use **Edit section** at the top of a Materials section (such as Silver) to
+edit multiple materials directly in the table. Name, pricing, pack quantity,
+item weight, unit, markup and supplier details are editable; Cost each and
+Student price are calculated automatically per row. **Save section** saves all
+changed rows together and returns to the same section, including hidden
+materials if shown. If a row is invalid, nothing is saved and errors stay in
+the grid. **Cancel** discards edits in that section. Save or cancel before
+editing another section.
+Other settings remain unchanged and are available through each material's
+**Edit** link. Grid edits use the same price history and price-date rules as
+the full edit form.
+
+## Daily online prices
+
+The first signed-in visit each day starts a background supplier-price update.
+All materials with saved Cooksongold or Metal Clay links are checked, including
+hidden materials; lesson fees and orders at cost are excluded. This daily run
+is not limited to the manual check's 20-item batch. Valid prices and item
+weights are saved automatically, with price history and today's checked date;
+student prices follow the existing markup. Past purchase charges are unchanged.
+The existing automatic daily silver-rate check continues separately.
+
+A banner shows progress and the result. Offline, unsupported, invalid or
+rate-limited prices stay unchanged and appear in the update details. Supplier
+requests remain paced in batches of 20 with five-minute pauses between batches.
+Rate-limited items get one retry after a five-minute pause; persistent failures
+are reported rather than repeatedly requesting the supplier. Large lists can
+take several minutes to finish. Materials edited while the check runs are not overwritten.
+The daily attempt is recorded in the database so refreshing the page or
+restarting the app does not repeat it. Use **Check supplier prices** on
+Materials to retry failures or an interrupted run.
 
 ## Running on Windows
 

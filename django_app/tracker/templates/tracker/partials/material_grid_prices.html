@@ -1,0 +1,13 @@
+{% load money %}
+{% if oob %}<template>{% endif %}
+{% if cell == "cost" or oob %}
+<td class="num" id="{{ form.prefix }}-cost" aria-live="polite"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if valid and not form.errors %}{{ form.instance.cost_per_item|gbp }}{% else %}<span class="sub-text">Check values</span>{% endif %}
+</td>
+{% endif %}
+{% if cell == "student" or oob %}
+<td class="num" id="{{ form.prefix }}-student" aria-live="polite"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if valid and not form.errors %}<strong class="credit">{{ form.instance.final_price|gbp }}</strong><span class="sub-text">per {{ form.instance.unit_type }}</span>{% else %}<span class="sub-text">Check values</span>{% endif %}
+</td>
+{% endif %}
+{% if oob %}</template>{% endif %}

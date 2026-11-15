@@ -50,6 +50,9 @@
   </header>
   {% endwith %}
   <main class="container">
+    {% if user.is_authenticated %}
+    <div hx-get="{% url 'tracker:daily_price_status' %}" hx-trigger="load" hx-swap="outerHTML"></div>
+    {% endif %}
     {% for message in messages %}
       <div class="flash {{ message.tags }}" role="status"><span class="gem" aria-hidden="true"></span>{{ message }}</div>
     {% endfor %}

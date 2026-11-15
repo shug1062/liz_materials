@@ -1,4 +1,9 @@
 htmx.onLoad((content) => {
+  const editingMaterials = Boolean(document.querySelector(".material-grid-form"));
+  document.querySelectorAll("[data-edit-material-section]").forEach((button) => {
+    button.disabled = editingMaterials;
+  });
+
   // Drag-to-reorder lists: each [data-sortable] is an hx-post form triggered on "end".
   content.querySelectorAll("[data-sortable]").forEach((list) => {
     new Sortable(list, {
@@ -49,6 +54,16 @@ document.addEventListener("change", (event) => {
   } else if (target.matches("[data-group]")) {
     syncGroupTick(document.querySelector(`[data-check-group="${target.dataset.group}"]`));
   }
+});
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-payment-amount]");
+  if (!button) return;
+  const amount = button.closest("form").querySelector('[name="amount"]');
+  amount.value = button.dataset.paymentAmount;
+  amount.dispatchEvent(new Event("input", { bubbles: true }));
+  amount.dispatchEvent(new Event("change", { bubbles: true }));
+  amount.focus();
 });
 
 // ---------- Class mode basket ----------

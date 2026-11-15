@@ -316,6 +316,42 @@ class MaterialForm(forms.ModelForm):
         return super().save(commit)
 
 
+class MaterialGridForm(MaterialForm):
+    editable_fields = {
+        "name", "pricing_type", "unit_type", "base_price", "pack_quantity", "weight_per_unit",
+        "markup_percentage", "supplier", "supplier_url",
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if name not in self.editable_fields:
+                # Reuse full-form validation, but preserve unshown values from the database, not POST.
+                field.disabled = True
+                field.widget = forms.HiddenInput()
+        if self.instance.kind == Material.Kind.ORDER:
+            for name in ("pricing_type", "base_price", "pack_quantity", "weight_per_unit", "markup_percentage"):
+                self.fields[name].disabled = True
+
+
+class BaseMaterialSectionFormSet(forms.BaseModelFormSet):
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+        ids = [form.instance.pk for form in self.forms]
+        expected = set(self.get_queryset().values_list("pk", flat=True))
+        if len(ids) != len(expected) or set(ids) != expected:
+            raise forms.ValidationError(
+                "The materials in this section have changed. Cancel and reopen the section before saving."
+            )
+
+
+MaterialSectionFormSet = forms.modelformset_factory(
+    Material, form=MaterialGridForm, formset=BaseMaterialSectionFormSet, extra=0, edit_only=True,
+)
+
+
 class ProjectForm(forms.ModelForm):
     class Meta:
         model = Project

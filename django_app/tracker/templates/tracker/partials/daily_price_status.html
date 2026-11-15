@@ -1,0 +1,23 @@
+<div{% if running %} hx-get="{% url 'tracker:daily_price_status' %}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  {% if refresh %}
+  <div class="flash {% if refresh.errors or not running and not refresh.finished_at %}error{% elif not running %}success{% endif %}" role="status">
+    {% if running %}
+    Updating online prices: {{ refresh.checked }} of {{ refresh.total }} processed. You can keep using the app; supplier batches pause for five minutes.
+    {% elif not refresh.finished_at %}
+    Today's online-price update was interrupted. Check supplier prices on Materials to retry.
+    {% else %}
+    Today's online prices: {{ refresh.checked }} processed, {{ refresh.updated }} updated{% if refresh.errors %}, {{ refresh.errors|length }} could not be updated{% endif %}.
+    {% endif %}
+    <a href="{% url 'tracker:material_list' %}">Materials</a>
+  </div>
+  {% if refresh.errors %}
+  <details class="panel">
+    <summary>Online-price update details</summary>
+    <div class="body">
+      <p>Prices that could not be checked were left unchanged. Use Check supplier prices on Materials to retry, or Edit to fix a supplier link.</p>
+      <ul>{% for error in refresh.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    </div>
+  </details>
+  {% endif %}
+  {% endif %}
+</div>

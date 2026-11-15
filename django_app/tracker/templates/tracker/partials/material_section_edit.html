@@ -1,0 +1,61 @@
+<section class="panel category-section{% if section == 'cat-quick' %} quick-section{% endif %}" id="{{ section }}">
+  <header>
+    <h3 class="capitalise">{{ section_name }} <span class="badge">{{ formset.forms|length }}</span></h3>
+    <div class="btn-row">
+      <a role="button" class="small ghost" href="{{ next_url }}" hx-get="{{ next_url }}"
+         hx-target="closest section" hx-select="#{{ section }}" hx-swap="outerHTML">Cancel</a>
+      <button type="submit" class="small" form="{{ section }}-form">Save section</button>
+    </div>
+  </header>
+  <form method="post" action="{{ request.get_full_path }}" id="{{ section }}-form" class="material-grid-form"
+        hx-post="{{ request.get_full_path }}" hx-target="closest section" hx-swap="outerHTML">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    <div class="body">
+      <p class="helptext">Edit several rows, then Save section. Cost each and Student price are calculated automatically. Nothing is saved if any row has errors. Save or cancel before editing another section.</p>
+      {{ formset.non_form_errors }}
+      {% if formset.total_error_count %}<p class="owes" role="alert">Nothing saved. Check the highlighted fields below.</p>{% endif %}
+    </div>
+    <figure>
+      <table class="materials-table material-grid">
+        <thead>
+          <tr><th>Material</th><th>Pricing</th><th>Supplier price</th><th class="num">Cost each</th>
+              <th>Markup</th><th class="num">Student price</th><th>Supplier</th></tr>
+        </thead>
+        <tbody>
+          {% for form in formset %}
+          <tr{% if form.instance.pk %} hx-get="{% url 'tracker:material_grid_preview' form.instance.pk %}?prefix={{ form.prefix }}"
+              hx-trigger="input changed delay:300ms, change" hx-include="this" hx-target="this" hx-swap="none"{% endif %}>
+            <td>
+              {% for field in form.hidden_fields %}{{ field.errors }}{{ field }}{% endfor %}
+              {{ form.non_field_errors }}
+              {{ form.name.errors }}<label><span class="sub-text">Name</span>{{ form.name }}</label>
+              {{ form.pack_quantity.errors }}<label><span class="sub-text">Items in pack</span>{{ form.pack_quantity }}</label>
+              {{ form.weight_per_unit.errors }}<label><span class="sub-text">Weight per item (g)</span>{{ form.weight_per_unit }}</label>
+            </td>
+            <td>
+              {{ form.pricing_type.errors }}<label><span class="sub-text">Pricing</span>{{ form.pricing_type }}</label>
+              {{ form.unit_type.errors }}<label><span class="sub-text">Sold per</span>{{ form.unit_type }}</label>
+              {% if form.instance.kind == "order" %}<span class="sub-text">Order at cost: pricing is fixed; enter the amount at purchase.</span>{% endif %}
+              {% if not form.instance.is_active %}<span class="badge inactive">Inactive</span>{% endif %}
+            </td>
+            <td>{{ form.base_price.errors }}<label><span class="sub-text">Supplier price (£)</span>{{ form.base_price }}</label><span class="sub-text">Per gram for weight-based pricing</span></td>
+            {% include "tracker/partials/material_grid_prices.html" with valid=True cell="cost" %}
+            <td>{{ form.markup_percentage.errors }}<label><span class="sub-text">Markup %</span>{{ form.markup_percentage }}</label></td>
+            {% include "tracker/partials/material_grid_prices.html" with valid=True cell="student" %}
+            <td>
+              {{ form.supplier.errors }}<label><span class="sub-text">Supplier name</span>{{ form.supplier }}</label>
+              {{ form.supplier_url.errors }}<label><span class="sub-text">Supplier link</span>{{ form.supplier_url }}</label>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </figure>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ next_url }}" hx-get="{{ next_url }}"
+         hx-target="closest section" hx-select="#{{ section }}" hx-swap="outerHTML">Cancel</a>
+      <button type="submit">Save section</button>
+    </div>
+  </form>
+</section>

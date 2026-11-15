@@ -72,6 +72,17 @@ class DailyBackupMiddleware:
                 messages.error(request, f"Daily backup failed: {error}")
 
 
+class DailyPricesMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.user.is_authenticated and request.method == "GET" and not request.path.startswith("/static/"):
+            from .background import start_daily_prices
+            start_daily_prices()
+        return self.get_response(request)
+
+
 @receiver(post_save, sender=StudioSettings)
 def _recheck_backup_after_settings_change(update_fields=None, **kwargs):
     global _backup_checked_on

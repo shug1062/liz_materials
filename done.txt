@@ -74,3 +74,14 @@ when i'm puytting in numbers of grammes, when i try and go to the next tab, its 
 * **Duplicate names in class mode.** There are three Kates and eight other pairs, and class mode shows first names only. Showing a surname initial would help, as would a "merge students" tool.
 * **No student has an email address (0 of 73),** so "email balances" can't be used yet. Importing an attendee export from Wix (your to-do) would fill emails in, and a CSV upload needs no Wix login set up.
 **No class has start or end dates,** so every class counts as current and the archive button never finds anyone. A quick "set term dates" step for several classes at once would fix that.
+
+
+on materials page, allow a quick edit option to edit n the list view rather than having to go into indiuvidual materials pages
+
+when opening app for first time that day, update all the online prices
+
+add edit button to students on student page next to email statement. this should open the edit student details page
+
+make the students -> purchase page the same as the  the class register -> class -> student page. add the purchase note option to the page not matter which direction it comes from.
+
+on class register, when going through a class to a student, there is the pay cash button. that automattically pays the current balance in cash. this should take to a pay cash form that allows different cash amounts to be paid. students will pay a portion of the balance or overpay or pay in full. dont assume what the payment is though.

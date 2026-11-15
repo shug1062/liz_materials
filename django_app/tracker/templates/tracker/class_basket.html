@@ -1,24 +1,22 @@
 {% extends "base.html" %}
 {% load money %}
 {% block content %}
-<a class="crumb" href="{{ back }}">← {{ class_label }}</a>
+<a class="crumb" href="{{ back }}">← {{ back_label }}</a>
 <div class="page-head">
   <div class="profile">
     <div class="avatar" aria-hidden="true">{{ student.name|slice:":1"|upper }}</div>
     <div><p class="eyebrow">Adding materials for</p><h1>{{ student.name }}</h1></div>
   </div>
-  {% if owed %}
-  <form class="settle" method="post" action="{% url 'tracker:settle_up' student.pk %}">
-    {% csrf_token %}<input type="hidden" name="next" value="{{ back }}">
-    <span class="settle-label">To pay <strong>{{ owed|gbp }}</strong></span>
-    <button name="method" value="Cash">Paid cash</button>
-    <button name="method" value="Card" class="ghost">Paid card</button>
-  </form>
-  {% endif %}
+  <div class="settle">
+    {% if owed %}<span class="settle-label">To pay <strong>{{ owed|gbp }}</strong></span>{% endif %}
+    <a role="button" href="{% url 'tracker:payment_new' %}?student={{ student.pk }}&amp;method=Cash&amp;next={{ request.get_full_path|urlencode }}">Pay cash</a>
+    <a role="button" class="ghost" href="{% url 'tracker:payment_new' %}?student={{ student.pk }}&amp;method=Card&amp;next={{ request.get_full_path|urlencode }}">Pay card</a>
+  </div>
 </div>
 
 <form method="post" id="basket-form" class="basket-layout">
   {% csrf_token %}
+  <input type="hidden" name="next" value="{{ back }}">
   <div>
     <section class="panel">
       <header><h3>Quick add</h3></header>
@@ -46,6 +44,10 @@
           <select name="project"><option value="">None</option>{% for p in projects %}<option value="{{ p.pk }}">{{ p.name }}</option>{% endfor %}</select>
         </label>
       </details>
+      <label>Purchase note (optional)
+        <textarea name="notes" rows="2" aria-describedby="purchase-note-help"></textarea>
+      </label>
+      <p class="helptext" id="purchase-note-help">Saved on every item in this basket.</p>
     </div>
     <div class="form-actions">
       <a role="button" class="ghost" href="{{ back }}">Cancel</a>
@@ -58,10 +60,10 @@
   <header><h3>Record a payment</h3>{% if owed %}<span class="sub-text">To pay {{ owed|gbp }}</span>{% endif %}</header>
   <form method="post" action="{% url 'tracker:class_payment' student.pk %}">
     {% csrf_token %}
+    <input type="hidden" name="next" value="{{ back }}">
     <div class="body">
       <div class="grid">
-        <label>Amount (£) <input type="text" name="amount" inputmode="decimal" autocomplete="off" required
-                                  {% if owed %}value="{{ owed|stringformat:'.2f' }}"{% endif %}></label>
+        <label>Amount (£) <input type="text" name="amount" inputmode="decimal" autocomplete="off" required></label>
         <label>Method
           <select name="payment_method">{% for value, label in methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
         </label>

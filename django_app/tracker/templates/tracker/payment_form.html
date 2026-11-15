@@ -15,6 +15,12 @@
         <div>{{ form.amount.errors }}<label>Amount (£) {{ form.amount }}</label></div>
         <div>{{ form.payment_method.errors }}<label>Method {{ form.payment_method }}</label></div>
       </div>
+      <div class="btn-row" role="group" aria-label="Quick payment amounts">
+        <button type="button" class="small ghost" data-payment-amount="5.00">£5</button>
+        <button type="button" class="small ghost" data-payment-amount="10.00">£10</button>
+        <button type="button" class="small ghost" data-payment-amount="20.00">£20</button>
+      </div>
+      <p class="helptext">Choose an amount or type your own, then Save payment to confirm.</p>
       {{ form.payment_date.errors }}<label>Date {{ form.payment_date }}</label>
       {{ form.notes.errors }}<label>Notes {{ form.notes }}</label>
     </div>

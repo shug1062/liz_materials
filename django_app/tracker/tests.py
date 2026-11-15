@@ -19,7 +19,7 @@ from django.utils import timezone
 from . import margins, reports, silver, statements, suppliers
 from .forms import MaterialForm
 from .models import (
-    Category, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass, StudioSettings,
+    Category, DailyPriceRefresh, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass, StudioSettings,
     estimated_unit_cost,
 )
 
@@ -486,6 +486,196 @@ class MaterialManagementTests(TestCase):
         change = PriceChange.objects.get()
         self.assertEqual((change.old_price, change.new_price, change.source), (Decimal("5.0000"), Decimal("6.0000"), "manual"))
 
+    def section_data(self, materials, changes=None):
+        prefix = f"grid-cat-{self.findings.pk}"
+        data = {f"{prefix}-TOTAL_FORMS": len(materials), f"{prefix}-INITIAL_FORMS": len(materials)}
+        for index, material in enumerate(materials):
+            fields = {
+                name: getattr(material, name) if getattr(material, name) is not None else ""
+                for name in ("name", "pricing_type", "unit_type", "base_price", "pack_quantity",
+                             "weight_per_unit", "markup_percentage", "supplier", "supplier_url")
+            }
+            fields["id"] = material.pk
+            fields.update((changes or {}).get(material.pk, {}))
+            data.update({f"{prefix}-{index}-{name}": value for name, value in fields.items()})
+        return data
+
+    def section_url(self):
+        return reverse("tracker:material_section_edit", args=[f"cat-{self.findings.pk}"])
+
+    def test_section_saves_multiple_rows_preserving_other_settings_and_purchases(self):
+        self.material.is_active = False
+        self.material.is_favourite = self.material.markup_ok = self.material.in_silver_report = True
+        self.material.notes = "Keep these notes"
+        self.material.price_date = date(2026, 1, 1)
+        self.material.save()
+        second = make_material(name="Second", category=self.findings, price_date=date(2026, 1, 1))
+        unchanged = make_material(name="Unchanged", category=self.findings)
+        unchanged_updated = unchanged.last_updated
+        purchase = Purchase(student=Student.objects.create(name="Amy"), material=self.material, quantity=Decimal("2"))
+        purchase.set_price(reprice=True)
+        purchase.save()
+        before_purchase = (purchase.unit_price, purchase.total_cost, purchase.unit_cost, purchase.cost_total)
+        next_url = reverse("tracker:material_list") + f"?inactive=1#cat-{self.findings.pk}"
+        changes = {
+            self.material.pk: {
+                "name": "Edited rings", "base_price": "6", "pack_quantity": "10", "markup_percentage": "50",
+                "unit_type": "piece", "supplier": "New supplier", "supplier_url": "https://example.com/rings",
+                "category_name": "Wrong", "notes": "Wrong", "is_active": "on", "kind": "order",
+            },
+            second.pk: {"markup_percentage": "40"},
+        }
+        response = self.client.post(
+            self.section_url() + "?inactive=1", self.section_data([self.material, second, unchanged], changes),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(response.headers["HX-Redirect"], next_url)
+        self.assertEqual(response.headers["HX-Refresh"], "true")
+        self.material.refresh_from_db()
+        self.assertEqual(
+            (self.material.name, self.material.unit_type, self.material.base_price, self.material.pack_quantity,
+             self.material.markup_percentage, self.material.supplier, self.material.supplier_url),
+            ("Edited rings", "piece", Decimal("6"), Decimal("10"), Decimal("50"),
+             "New supplier", "https://example.com/rings"),
+        )
+        self.assertEqual((self.material.cost_per_item, self.material.final_price), (Decimal("0.6"), Decimal("0.9")))
+        self.assertEqual(self.material.category, self.findings)
+        self.assertEqual(self.material.notes, "Keep these notes")
+        self.assertEqual(self.material.kind, Material.Kind.MATERIAL)
+        self.assertFalse(self.material.is_active)
+        self.assertTrue(self.material.is_favourite and self.material.markup_ok and self.material.in_silver_report)
+        self.assertEqual(self.material.price_date, timezone.localdate())
+        second.refresh_from_db()
+        self.assertEqual(second.markup_percentage, Decimal("40"))
+        self.assertEqual(second.price_date, date(2026, 1, 1))
+        unchanged.refresh_from_db()
+        self.assertEqual(unchanged.last_updated, unchanged_updated)
+        change = PriceChange.objects.get()
+        self.assertEqual((change.old_price, change.new_price, change.source), (Decimal("5"), Decimal("6"), "manual"))
+        purchase.refresh_from_db()
+        self.assertEqual((purchase.unit_price, purchase.total_cost, purchase.unit_cost, purchase.cost_total), before_purchase)
+        self.assertContains(self.client.get(next_url), '<strong>Edited rings</strong>', count=2, html=True)
+
+    def test_invalid_grid_row_prevents_saving_all_rows(self):
+        second = make_material(name="Second", category=self.findings)
+        cases = [
+            ({"pack_quantity": "0"}, "Must be at least 1."),
+            ({"pricing_type": "per_gram_item"}, "Enter the weight of one item"),
+            ({"base_price": "not a price"}, "Enter a number."),
+            ({"supplier_url": "not a URL"}, "Enter a valid URL."),
+        ]
+        for changes, error in cases:
+            with self.subTest(changes=changes):
+                data = self.section_data([self.material, second], {
+                    self.material.pk: {"name": "Edited rings"}, second.pk: changes,
+                })
+                response = self.client.post(self.section_url(), data, HTTP_HX_REQUEST="true")
+                self.assertTemplateUsed(response, "tracker/partials/material_section_edit.html")
+                self.assertContains(response, error)
+                self.assertContains(response, 'value="Edited rings"')
+                self.assertContains(response, "Nothing saved.")
+                self.assertNotIn("HX-Redirect", response.headers)
+                self.material.refresh_from_db()
+                self.assertEqual((self.material.name, self.material.base_price), ("Jump rings", Decimal("5")))
+                second.refresh_from_db()
+                self.assertEqual((second.name, second.base_price), ("Second", Decimal("5")))
+                self.assertFalse(PriceChange.objects.exists())
+
+    def test_grid_weight_change_logs_history_and_recosts_silver(self):
+        self.material.is_silver = True
+        self.material.pricing_type = Material.PricingType.PER_GRAM_ITEM
+        self.material.weight_per_unit = Decimal("0.2")
+        self.material.save()
+        with patch("tracker.views.silver.recost") as recost:
+            response = self.client.post(
+                self.section_url(), self.section_data([self.material], {
+                    self.material.pk: {"weight_per_unit": "0.3", "markup_percentage": "50"},
+                }),
+            )
+        self.assertRedirects(response, reverse("tracker:material_list") + f"#cat-{self.findings.pk}")
+        recost.assert_called_once()
+        self.assertEqual(recost.call_args.args[0][0].pk, self.material.pk)
+        self.material.refresh_from_db()
+        self.assertEqual(self.material.final_price, Decimal("2.25"))
+        change = PriceChange.objects.get()
+        self.assertEqual((change.old_weight, change.new_weight), (Decimal("0.2"), Decimal("0.3")))
+
+    def test_grid_section_membership_filters_and_unique_row_ids(self):
+        self.material.is_favourite = True
+        self.material.save()
+        hidden = make_material(name="Hidden", category=self.findings, is_active=False)
+        ungrouped = make_material(name="Ungrouped")
+        category = self.client.get(self.section_url())
+        self.assertEqual([form.instance.pk for form in category.context["formset"]], [self.material.pk])
+        all_rows = self.client.get(self.section_url(), {"inactive": "1"})
+        self.assertEqual({form.instance.pk for form in all_rows.context["formset"]}, {self.material.pk, hidden.pk})
+        quick = self.client.get(reverse("tracker:material_section_edit", args=["cat-quick"]))
+        self.assertEqual([form.instance.pk for form in quick.context["formset"]], [self.material.pk])
+        self.assertNotEqual(
+            quick.context["formset"][0]["name"].id_for_label,
+            category.context["formset"][0]["name"].id_for_label,
+        )
+        none = self.client.get(reverse("tracker:material_section_edit", args=["cat-none"]))
+        self.assertEqual([form.instance.pk for form in none.context["formset"]], [ungrouped.pk])
+        self.material.refresh_from_db()
+        self.assertEqual(self.material.name, "Jump rings")
+        self.assertFalse(PriceChange.objects.exists())
+        page = self.client.get(reverse("tracker:material_list"))
+        self.assertContains(page, "Edit section")
+        self.assertNotContains(page, "Quick edit")
+
+    def test_grid_rejects_duplicate_outside_or_missing_rows(self):
+        second = make_material(name="Second", category=self.findings)
+        outside = make_material(name="Outside")
+        prefix = f"grid-cat-{self.findings.pk}"
+        for overrides in (
+            {f"{prefix}-1-id": outside.pk},
+            {f"{prefix}-1-id": self.material.pk},
+            {f"{prefix}-TOTAL_FORMS": 1, f"{prefix}-INITIAL_FORMS": 1},
+            {f"{prefix}-TOTAL_FORMS": ""},
+        ):
+            with self.subTest(overrides=overrides):
+                data = self.section_data([self.material, second], {self.material.pk: {"base_price": "6"}})
+                response = self.client.post(self.section_url(), {**data, **overrides})
+                self.assertContains(response, "Nothing saved.")
+                self.assertNotIn("HX-Redirect", response.headers)
+                self.material.refresh_from_db()
+                outside.refresh_from_db()
+                self.assertEqual((self.material.base_price, outside.base_price), (Decimal("5"), Decimal("5")))
+                self.assertFalse(PriceChange.objects.exists())
+
+    def test_grid_preview_is_row_scoped_and_never_saves(self):
+        prefix = f"grid-cat-{self.findings.pk}-0"
+        data = self.section_data([self.material], {
+            self.material.pk: {"base_price": "6", "pack_quantity": "10", "markup_percentage": "50"},
+        })
+        data["prefix"] = prefix
+        url = reverse("tracker:material_grid_preview", args=[self.material.pk])
+        response = self.client.get(url, data)
+        self.assertContains(response, f'id="{prefix}-cost"')
+        self.assertContains(response, f'id="{prefix}-student"')
+        self.assertContains(response, "£0.60")
+        self.assertContains(response, "£0.90")
+        for value in ("NaN", "not a number"):
+            invalid = self.client.get(url, {**data, f"{prefix}-base_price": value})
+            self.assertContains(invalid, "Check values")
+        self.material.refresh_from_db()
+        self.assertEqual(self.material.base_price, Decimal("5"))
+        self.assertFalse(PriceChange.objects.exists())
+
+    def test_grid_batch_rolls_back_when_saving_a_row_fails(self):
+        second = make_material(name="Second", category=self.findings, is_silver=True)
+        data = self.section_data([self.material, second], {
+            self.material.pk: {"base_price": "6"}, second.pk: {"base_price": "7"},
+        })
+        with patch("tracker.views.silver.recost", side_effect=RuntimeError("Recost failed")):
+            with self.assertRaisesMessage(RuntimeError, "Recost failed"):
+                self.client.post(self.section_url(), data)
+        self.material.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual((self.material.base_price, second.base_price), (Decimal("5"), Decimal("5")))
+        self.assertFalse(PriceChange.objects.exists())
+
     def test_price_check_then_apply(self):
         quotes = {self.material.pk: suppliers.Quote(price=Decimal("6.0000"))}
         with patch("tracker.views.suppliers.fetch_quotes", return_value=quotes):
@@ -718,6 +908,61 @@ class ClassModeTests(TestCase):
         self.client.post(self.basket_url, {f"qty_{self.rings.pk}": "0", f"qty_{self.sheet.pk}": "2", "qty_x": "1"})
         self.assertFalse(Purchase.objects.exists())
 
+    def test_students_purchase_links_open_the_shared_basket(self):
+        from bs4 import BeautifulSoup
+
+        for url, label in (
+            (reverse("tracker:student_list"), "Purchase"),
+            (self.anne.get_absolute_url(), "Record purchase"),
+        ):
+            with self.subTest(url=url):
+                page = BeautifulSoup(self.client.get(url).content, "html.parser")
+                container = page.select_one(".page-head") if label == "Record purchase" else page
+                link = container.find("a", string=label)
+                self.assertTrue(link["href"].startswith(self.basket_url + "?next="))
+                basket = self.client.get(link["href"])
+                self.assertTemplateUsed(basket, "tracker/class_basket.html")
+                self.assertContains(basket, "Purchase note (optional)")
+                self.assertContains(basket, 'name="notes"', count=2)
+                expected = self.anne.get_absolute_url() if label == "Record purchase" else "/students/?class_name=Tue+pm"
+                self.assertEqual(basket.context["back"], expected)
+
+    def test_basket_note_applies_to_every_purchase_from_either_route(self):
+        project = Project.objects.create(name="Pendant")
+        for next_url in ("", "/students/?class_name=Tue+pm"):
+            with self.subTest(next_url=next_url):
+                response = self.client.post(self.basket_url, {
+                    f"qty_{self.rings.pk}": "2", f"qty_{self.sheet.pk}": "3",
+                    "notes": "  Pendant for exhibition\nUse remaining sheet  ",
+                    "purchase_date": "2026-10-31", "project": project.pk, "next": next_url,
+                })
+                self.assertRedirects(response, next_url or "/class/?class_name=Tue+pm")
+                purchases = self.anne.purchases.all()
+                self.assertEqual(purchases.count(), 2)
+                for purchase in purchases:
+                    self.assertEqual(purchase.notes, "Pendant for exhibition\nUse remaining sheet")
+                    self.assertEqual(purchase.project, project)
+                    self.assertEqual(purchase.purchase_date, date(2026, 10, 31))
+                self.assertFalse(Payment.objects.exists())
+                self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+                self.assertFalse(self.anne.purchases.exists())
+
+    def test_basket_and_payment_reject_external_return_destination(self):
+        expected = "/class/?class_name=Tue+pm"
+        page = self.client.get(self.basket_url, {"next": "https://example.com/"})
+        self.assertEqual(page.context["back"], expected)
+        response = self.client.post(self.basket_url, {
+            f"qty_{self.rings.pk}": "1", "next": "https://example.com/",
+        })
+        self.assertRedirects(response, expected)
+        self.assertEqual(Purchase.objects.get().notes, "")
+        payment = self.client.post(reverse("tracker:class_payment", args=[self.anne.pk]), {
+            "amount": "1", "payment_method": "Cash", "notes": "Payment only", "next": "/students/",
+        })
+        self.assertRedirects(payment, "/students/")
+        self.assertEqual(Payment.objects.get().notes, "Payment only")
+        self.assertEqual(Purchase.objects.get().notes, "")
+
     def test_class_screens_hide_supplier_costs(self):
         Student.objects.create(name="Karen", class_name="Tue pm")
         Payment.objects.create(student=self.anne, amount=Decimal("1"))
@@ -909,6 +1154,37 @@ class StatementTests(TestCase):
             self.assertContains(response, "Email statement", count=2)
             self.assertContains(response, "mailto:amy@example.com?subject=")
             self.assertContains(response, 'disabled title="No email address">Email statement', count=1)
+
+    def test_students_list_edit_follows_email_statement_with_or_without_email(self):
+        from bs4 import BeautifulSoup
+
+        no_email = Student.objects.create(name="No email", class_name="Tue")
+        response = self.client.get(reverse("tracker:student_list"))
+        page = BeautifulSoup(response.content, "html.parser")
+        for student in (self.amy, no_email):
+            url = reverse("tracker:student_edit", args=[student.pk])
+            button = page.select_one(f'.students-table .actions a[href^="{url}?next="]')
+            self.assertIsNotNone(button)
+            self.assertEqual(button.get_text(strip=True), "Edit")
+            self.assertEqual(button.find_previous_sibling().get_text(strip=True), "Email statement")
+            edit_page = self.client.get(button["href"])
+            self.assertEqual(edit_page.status_code, 200)
+            self.assertEqual(edit_page.context["cancel_url"], reverse("tracker:student_list"))
+
+    def test_student_edit_returns_to_origin_on_cancel_validation_and_save(self):
+        url = reverse("tracker:student_edit", args=[self.amy.pk])
+        for target in (reverse("tracker:student_list"), reverse("tracker:student_list") + "?class_name=Tue",
+                       "", "https://example.com/"):
+            with self.subTest(target=target):
+                expected = target if target.startswith("/students/") else self.amy.get_absolute_url()
+                page = self.client.get(url, {"next": target})
+                self.assertEqual(page.context["cancel_url"], expected)
+                from urllib.parse import urlencode
+                edit_url = url + "?" + urlencode({"next": target})
+                invalid = self.client.post(edit_url, {"name": ""})
+                self.assertEqual(invalid.context["cancel_url"], expected)
+                saved = self.client.post(edit_url, {"name": self.amy.name, "class_name": self.amy.class_name})
+                self.assertRedirects(saved, expected)
 
     def test_statement_and_balances_pages(self):
         self.buy(self.sheet, "2", date(2026, 10, 1))
@@ -1340,6 +1616,90 @@ class ClassPaymentTests(TestCase):
         self.assertEqual((payment.student, payment.amount, payment.payment_method, payment.payment_date, payment.notes),
                          (self.anne, Decimal("12.50"), "Card", timezone.localdate(), "Deposit"))
 
+    def test_cash_button_opens_blank_form_without_recording_payment(self):
+        from bs4 import BeautifulSoup
+
+        material = make_material(base_price=Decimal("10"), pack_quantity=Decimal("1"), markup_percentage=Decimal("0"))
+        purchase = Purchase(student=self.anne, material=material, quantity=Decimal("1"))
+        purchase.set_price(reprice=True)
+        purchase.save()
+        basket_url = reverse("tracker:class_basket", args=[self.anne.pk]) + "?next=/students/"
+        page = BeautifulSoup(self.client.get(basket_url).content, "html.parser")
+        cash = page.find("a", string="Pay cash")
+        self.assertIsNotNone(cash)
+        self.assertIsNone(page.select_one('.settle button[value="Cash"]'))
+        self.assertFalse(page.select_one('#record-payment input[name="amount"]').get("value"))
+        response = self.client.get(cash["href"])
+        self.assertTemplateUsed(response, "tracker/payment_form.html")
+        self.assertEqual(str(response.context["form"]["student"].value()), str(self.anne.pk))
+        self.assertEqual(response.context["form"]["payment_method"].value(), "Cash")
+        self.assertIsNone(response.context["form"]["amount"].value())
+        self.assertEqual(response.context["next"], basket_url)
+        self.client.get(response.context["next"])
+        self.assertFalse(Payment.objects.exists())
+        invalid = self.client.post(cash["href"], {
+            "student": self.anne.pk, "amount": "", "payment_method": "Cash",
+            "payment_date": timezone.localdate().isoformat(),
+        })
+        self.assertFormError(invalid.context["form"], "amount", "This field is required.")
+        self.assertFalse(Payment.objects.exists())
+
+    def test_cash_form_saves_entered_partial_full_or_excess_amount(self):
+        material = make_material(base_price=Decimal("10"), pack_quantity=Decimal("1"), markup_percentage=Decimal("0"))
+        purchase = Purchase(student=self.anne, material=material, quantity=Decimal("1"))
+        purchase.set_price(reprice=True)
+        purchase.save()
+        basket_url = reverse("tracker:class_basket", args=[self.anne.pk])
+        for amount, balance in (("4", "-6"), ("10", "0"), ("15", "5")):
+            with self.subTest(amount=amount):
+                response = self.client.post(reverse("tracker:payment_new"), {
+                    "student": self.anne.pk, "amount": amount, "payment_method": "Cash",
+                    "payment_date": timezone.localdate().isoformat(), "next": basket_url,
+                })
+                self.assertRedirects(response, basket_url)
+                self.assertEqual(Payment.objects.get().amount, Decimal(amount))
+                self.assertEqual(Student.objects.with_balances().get(pk=self.anne.pk).balance, Decimal(balance))
+                Payment.objects.all().delete()
+
+    def test_cash_and_card_links_available_when_settled_or_in_credit(self):
+        from bs4 import BeautifulSoup
+
+        basket_url = reverse("tracker:class_basket", args=[self.anne.pk])
+        for credit in (False, True):
+            with self.subTest(credit=credit):
+                if credit:
+                    Payment.objects.create(student=self.anne, amount=Decimal("5"))
+                count = Payment.objects.count()
+                page = BeautifulSoup(self.client.get(basket_url).content, "html.parser")
+                self.assertIsNone(page.select_one("form.settle"))
+                for method in ("Cash", "Card"):
+                    link = page.find("a", string=f"Pay {method.lower()}")
+                    self.assertIsNotNone(link)
+                    response = self.client.get(link["href"])
+                    self.assertEqual(response.context["form"]["payment_method"].value(), method)
+                    self.assertIsNone(response.context["form"]["amount"].value())
+                    self.assertEqual(response.context["next"], basket_url)
+                    for amount in ("5.00", "10.00", "20.00"):
+                        self.assertContains(response, f'data-payment-amount="{amount}"')
+                self.assertEqual(Payment.objects.count(), count)
+
+    def test_card_payment_requires_amount_and_saves_advance_payment(self):
+        url = reverse("tracker:payment_new") + f"?student={self.anne.pk}&method=Card"
+        invalid = self.client.post(url, {
+            "student": self.anne.pk, "payment_method": "Card", "payment_date": timezone.localdate().isoformat(),
+        })
+        self.assertFormError(invalid.context["form"], "amount", "This field is required.")
+        self.assertFalse(Payment.objects.exists())
+        self.client.post(url, {
+            "student": self.anne.pk, "payment_method": "Card", "amount": "20",
+            "payment_date": timezone.localdate().isoformat(),
+        })
+        payment = Payment.objects.get()
+        self.assertEqual((payment.amount, payment.payment_method), (Decimal("20"), "Card"))
+        self.assertEqual(Student.objects.with_balances().get(pk=self.anne.pk).balance, Decimal("20"))
+        edit = self.client.get(reverse("tracker:payment_edit", args=[payment.pk]), {"method": "Cash"})
+        self.assertEqual(edit.context["form"]["payment_method"].value(), "Card")
+
     def test_invalid_payment_is_not_saved(self):
         other = Student.objects.create(name="Karen")
         response = self.client.post(self.url, {"amount": "0", "payment_method": "Cash", "student": other.pk})
@@ -1653,6 +2013,187 @@ class CourseFeeTests(TestCase):
         self.assertFalse(Purchase.objects.exists())
 
 
+class DailySupplierPriceTests(TestCase):
+    def setUp(self):
+        self.today = timezone.localdate()
+        sleeper = patch("tracker.background.time.sleep")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
+
+    def test_first_visit_claims_each_day_once_across_requests_and_restarts(self):
+        from tracker import background
+
+        with patch("tracker.background._serving", True), patch("tracker.background._prices_checked_on", None), \
+                patch("tracker.background._price_thread", None), patch("tracker.background.threading.Thread") as thread:
+            thread.return_value.is_alive.return_value = False
+            self.client.get(reverse("tracker:home"))
+            self.client.get(reverse("tracker:material_list"))
+            background._prices_checked_on = None
+            background.start_daily_prices()
+            self.assertEqual(thread.call_count, 1)
+            self.assertEqual(DailyPriceRefresh.objects.count(), 1)
+            tomorrow = self.today + timedelta(days=1)
+            with patch("tracker.background.timezone.localdate", return_value=tomorrow):
+                self.client.get(reverse("tracker:home"))
+            self.assertEqual(thread.call_count, 2)
+            self.assertEqual(set(DailyPriceRefresh.objects.values_list("day", flat=True)), {self.today, tomorrow})
+
+    def test_only_signed_in_app_visits_trigger_refresh(self):
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+        from tracker.middleware import DailyPricesMiddleware
+
+        middleware = DailyPricesMiddleware(lambda request: HttpResponse())
+        with patch("tracker.background.start_daily_prices") as start:
+            for path, authenticated, method in (
+                ("/", False, "get"), ("/static/tracker/app.js", True, "get"), ("/materials/", True, "post"),
+            ):
+                request = getattr(RequestFactory(), method)(path)
+                request.user = Mock(is_authenticated=authenticated)
+                middleware(request)
+            start.assert_not_called()
+            request = RequestFactory().get("/")
+            request.user = Mock(is_authenticated=True)
+            middleware(request)
+            start.assert_called_once()
+
+    def test_refresh_checks_every_link_including_hidden_and_preserves_purchase_charges(self):
+        from tracker.background import refresh_daily_prices
+
+        materials = [
+            make_material(name=f"Linked {i:02}", supplier_url=f"https://www.cooksongold.com/{i}",
+                          is_active=i != 22, price_date=self.today - timedelta(days=5), is_silver=i == 0)
+            for i in range(23)
+        ]
+        make_material(name="No link")
+        make_material(name="Order", kind=Material.Kind.ORDER, supplier_url="https://www.cooksongold.com/order")
+        make_material(name="Lesson", kind=Material.Kind.LESSON, supplier_url="https://www.cooksongold.com/lesson")
+        purchase = Purchase(student=Student.objects.create(name="Amy"), material=materials[1], quantity=Decimal("2"))
+        purchase.set_price(reprice=True)
+        purchase.save()
+        original_charge = (purchase.unit_price, purchase.total_cost)
+        refresh = DailyPriceRefresh.objects.create(day=self.today)
+        quotes = {m.pk: suppliers.Quote(price=Decimal("6"), final_url=f"https://www.cooksongold.com/new-{m.pk}")
+                  for m in materials}
+        quotes[materials[-1].pk].price = Decimal("5")
+        with patch("tracker.suppliers.fetch_quotes", return_value=quotes) as fetch, \
+                patch("tracker.silver.recost") as recost:
+            refresh_daily_prices(self.today)
+        self.assertEqual([len(call.args[0]) for call in fetch.call_args_list], [20, 3])
+        self.sleep.assert_called_once_with(300)
+        refresh.refresh_from_db()
+        self.assertEqual((refresh.total, refresh.checked, refresh.updated, refresh.errors), (23, 23, 22, []))
+        self.assertIsNotNone(refresh.finished_at)
+        self.assertEqual(PriceChange.objects.count(), 22)
+        self.assertEqual(set(PriceChange.objects.values_list("source", flat=True)), {"supplier"})
+        for index, material in enumerate(materials):
+            material.refresh_from_db()
+            self.assertEqual(material.base_price, Decimal("5") if index == 22 else Decimal("6"))
+            self.assertEqual(material.price_date, self.today)
+            self.assertEqual(material.supplier_url, f"https://www.cooksongold.com/new-{material.pk}")
+        self.assertFalse(materials[-1].is_active)
+        self.assertEqual(materials[0].final_price, Decimal("0.1440"))
+        self.assertEqual(recost.call_args.args[0][0].price_date, self.today)
+        purchase.refresh_from_db()
+        self.assertEqual((purchase.unit_price, purchase.total_cost), original_charge)
+
+    def test_failures_keep_prices_and_rate_limit_does_not_block_other_suppliers(self):
+        from tracker.background import refresh_daily_prices
+
+        limited = make_material(name="Limited", supplier_url="https://www.cooksongold.com/limited")
+        invalid = make_material(name="Invalid", supplier_url="https://www.cooksongold.com/invalid")
+        unsupported = make_material(name="Unsupported", supplier_url="https://example.com/product")
+        good = make_material(name="Clay", supplier_url="https://www.metalclay.co.uk/products/clay")
+        old_dates = {m.pk: m.price_date for m in (limited, invalid, unsupported)}
+        refresh = DailyPriceRefresh.objects.create(day=self.today)
+        quotes = {
+            limited.pk: suppliers.Quote(error="Please slow down", rate_limited=True),
+            invalid.pk: suppliers.Quote(price=Decimal("NaN")),
+            good.pk: suppliers.Quote(price=Decimal("7")),
+        }
+        with patch("tracker.suppliers.fetch_quotes", side_effect=lambda ms: {m.pk: quotes[m.pk] for m in ms}) as fetch, \
+                self.assertLogs("tracker.background", level="WARNING"):
+            refresh_daily_prices(self.today)
+        self.assertEqual(fetch.call_count, 3)
+        self.sleep.assert_called_once_with(300)
+        refresh.refresh_from_db()
+        self.assertEqual((refresh.checked, refresh.updated, len(refresh.errors)), (4, 1, 3))
+        self.assertIn("Limited: Please slow down", refresh.errors)
+        for material in (limited, invalid, unsupported):
+            material.refresh_from_db()
+            self.assertEqual((material.base_price, material.price_date), (Decimal("5"), old_dates[material.pk]))
+        good.refresh_from_db()
+        self.assertEqual(good.base_price, Decimal("7"))
+        self.assertEqual(PriceChange.objects.get().material, good)
+
+    def test_price_check_does_not_overwrite_edits_made_while_fetching(self):
+        from tracker.background import refresh_daily_prices
+
+        material = make_material(supplier_url="https://www.cooksongold.com/rings")
+        refresh = DailyPriceRefresh.objects.create(day=self.today)
+
+        def fetch(materials):
+            Material.objects.filter(pk=material.pk).update(base_price=Decimal("9"))
+            return {material.pk: suppliers.Quote(price=Decimal("6"))}
+
+        with patch("tracker.suppliers.fetch_quotes", side_effect=fetch), \
+                self.assertLogs("tracker.background", level="WARNING"):
+            refresh_daily_prices(self.today)
+        material.refresh_from_db()
+        refresh.refresh_from_db()
+        self.assertEqual(material.base_price, Decimal("9"))
+        self.assertIn("kept your edits", refresh.errors[0])
+        self.assertEqual(refresh.updated, 0)
+        self.assertFalse(PriceChange.objects.exists())
+
+    def test_rate_limited_price_is_updated_after_delayed_retry(self):
+        from tracker.background import refresh_daily_prices
+
+        material = make_material(supplier_url="https://www.cooksongold.com/rings")
+        refresh = DailyPriceRefresh.objects.create(day=self.today)
+        with patch("tracker.suppliers.fetch_quotes", side_effect=[
+            {material.pk: suppliers.Quote(error="Slow down", rate_limited=True)},
+            {material.pk: suppliers.Quote(price=Decimal("6"))},
+        ]):
+            refresh_daily_prices(self.today)
+        self.sleep.assert_called_once_with(300)
+        refresh.refresh_from_db()
+        material.refresh_from_db()
+        self.assertEqual((refresh.checked, refresh.updated, refresh.errors), (1, 1, []))
+        self.assertEqual(material.base_price, Decimal("6"))
+
+    def test_unexpected_failure_is_reported_not_left_running(self):
+        from tracker.background import refresh_daily_prices
+
+        make_material(supplier_url="https://www.cooksongold.com/rings")
+        refresh = DailyPriceRefresh.objects.create(day=self.today)
+        with patch("tracker.suppliers.fetch_quotes", side_effect=RuntimeError("broken parser")), \
+                self.assertLogs("tracker.background", level="ERROR"):
+            with self.assertRaisesMessage(RuntimeError, "broken parser"):
+                refresh_daily_prices(self.today)
+        refresh.refresh_from_db()
+        self.assertIsNotNone(refresh.finished_at)
+        self.assertIn("stopped unexpectedly", refresh.errors[0])
+
+    def test_status_shows_progress_failures_and_interrupted_runs(self):
+        refresh = DailyPriceRefresh.objects.create(day=self.today, total=3, checked=1)
+        url = reverse("tracker:daily_price_status")
+        with patch("tracker.background.prices_running", return_value=True):
+            progress = self.client.get(url)
+        self.assertContains(progress, "1 of 3 processed")
+        self.assertContains(progress, 'hx-trigger="every 5s"')
+        with patch("tracker.background.prices_running", return_value=False):
+            interrupted = self.client.get(url)
+        self.assertContains(interrupted, "was interrupted")
+        self.assertNotContains(interrupted, 'hx-trigger="every 5s"')
+        refresh.finished_at = timezone.now()
+        refresh.errors = ["Rings: offline"]
+        refresh.save()
+        finished = self.client.get(url)
+        self.assertContains(finished, "Rings: offline")
+        self.assertNotContains(finished, 'hx-trigger="every 5s"')
+
+
 class DailySilverFetchTests(TestCase):
     def test_fetch_today_only_fetches_once_a_day(self):
         with patch("tracker.suppliers.fetch_silver_price_per_kg", return_value=Decimal("2500")) as fetch:
@@ -1668,7 +2209,8 @@ class DailySilverFetchTests(TestCase):
 
     def test_background_thread_can_be_turned_off(self):
         from tracker import background
-        with self.settings(SILVER_AUTO_FETCH=False), patch("tracker.background.threading.Thread") as thread:
+        with self.settings(SILVER_AUTO_FETCH=False), patch("tracker.background._serving", False), \
+                patch("tracker.background.threading.Thread") as thread:
             background.start()
         thread.assert_not_called()
 

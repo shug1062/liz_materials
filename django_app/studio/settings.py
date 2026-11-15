@@ -55,6 +55,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.LoginRequiredMiddleware" if REQUIRE_LOGIN else "tracker.middleware.AutoLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "tracker.middleware.DailyBackupMiddleware",
+    "tracker.middleware.DailyPricesMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
 ]

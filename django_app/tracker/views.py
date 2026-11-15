@@ -7,10 +7,11 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.contrib import messages
 from django.core.management import call_command
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, F, Max, ProtectedError, Q, Sum
 from django.forms.models import model_to_dict
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -20,12 +21,13 @@ from django.views.decorators.http import require_POST
 from . import contacts_import, margins, silver, statements, suppliers, undo
 from . import reports as reports_lib
 from .forms import (
-    BackupSettingsForm, DateRangeForm, MaterialForm, PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm,
+    BackupSettingsForm, DateRangeForm, MaterialForm, MaterialGridForm, MaterialSectionFormSet,
+    PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm,
     SaleFilterForm, SaleForm, SilverPriceForm, StudentForm,
     StudioClassForm, TermDatesForm, CourseFeeForm, NextTermForm,
 )
 from .models import (
-    ZERO, Category, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass,
+    ZERO, Category, DailyPriceRefresh, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass,
     StudioSettings, money,
 )
 
@@ -328,11 +330,11 @@ def student_form(request, pk=None):
     if request.method == "POST" and form.is_valid():
         student = form.save()
         messages.success(request, f"Saved {student.name}.")
-        return redirect(student)
+        return redirect(_next_url(request, student.get_absolute_url()))
     return render(request, "tracker/form_page.html", {
         "form": form,
         "title": f"Edit {student.name}" if student else "Add student",
-        "cancel_url": student.get_absolute_url() if student else reverse("tracker:student_list"),
+        "cancel_url": _next_url(request, student.get_absolute_url() if student else reverse("tracker:student_list")),
         "class_names": StudioClass.ordered_class_names(include_finished=False),
     })
 
@@ -400,6 +402,8 @@ def purchase_delete(request, pk):
 def payment_form(request, pk=None):
     payment = get_object_or_404(Payment, pk=pk) if pk else None
     initial = {"student": request.GET.get("student")} if not payment else {}
+    if not payment and request.GET.get("method") in Payment.Method.values:
+        initial["payment_method"] = request.GET["method"]
     form = PaymentForm(request.POST or None, instance=payment, initial=initial,
                        students=None if payment else _students_for(request, include_archived=True))
     default_next = payment.student.get_absolute_url() if payment else None
@@ -557,7 +561,8 @@ def _quick_materials():
 
 def class_basket(request, pk):
     student = get_object_or_404(Student.objects.with_balances(), pk=pk)
-    back = _class_url(student.class_name)
+    class_back = _class_url(student.class_name)
+    back = _next_url(request, class_back)
     if request.method == "POST":
         materials = {m.pk: m for m in Material.objects.filter(is_active=True)}
         try:
@@ -565,6 +570,7 @@ def class_basket(request, pk):
         except ValueError:
             when = timezone.localdate()
         project = Project.objects.filter(pk=request.POST.get("project") or None).first()
+        notes = request.POST.get("notes", "").strip()
         created = []
         with transaction.atomic():
             for key, value in request.POST.items():
@@ -577,7 +583,7 @@ def class_basket(request, pk):
                 if material is None or quantity <= 0:
                     continue
                 purchase = Purchase(student=student, material=material, quantity=quantity,
-                                    purchase_date=when, project=project)
+                                    purchase_date=when, project=project, notes=notes)
                 purchase.set_price(reprice=True)
                 purchase.save()
                 created.append(purchase)
@@ -591,6 +597,7 @@ def class_basket(request, pk):
     return render(request, "tracker/class_basket.html", {
         "student": student,
         "back": back,
+        "back_label": (student.class_name or NO_CLASS) if back == class_back else "Back",
         "class_label": student.class_name or NO_CLASS,
         "quick": _quick_materials(),
         "purchases": student.purchases.select_related("material", "project").order_by("-purchase_date", "-pk"),
@@ -638,10 +645,14 @@ def class_payment(request, pk):
     if form.is_valid():
         payment = form.save()
         undo.remember(request, f"{student} paid £{payment.amount} by {payment.payment_method.lower()}.", created=[payment])
-        return redirect(_class_url(student.class_name))
+        return redirect(_next_url(request, _class_url(student.class_name)))
     errors = " ".join(e for field in form.errors.values() for e in field)
     messages.error(request, f"Payment not saved: {errors}")
-    return redirect("tracker:class_basket", pk=student.pk)
+    basket_url = reverse("tracker:class_basket", args=[student.pk])
+    back = _next_url(request, _class_url(student.class_name))
+    if back != _class_url(student.class_name):
+        basket_url += "?" + urlencode({"next": back})
+    return redirect(basket_url)
 
 
 def payments_report(request):
@@ -828,6 +839,26 @@ def material_silver(request):
     })
 
 
+def _save_material_form(form, source=None):
+    old = Material.objects.filter(pk=form.instance.pk or getattr(source, "pk", None)).first()
+    saved = form.save(commit=False)
+    price_changed = old is not None and any(
+        getattr(old, f) != getattr(saved, f) for f in ("base_price", "pack_quantity", "weight_per_unit"))
+    if price_changed and "price_date" not in form.changed_data:
+        saved.price_date = timezone.localdate()
+    if source:
+        saved.sort_order = source.sort_order
+    saved.save()
+    if old and not source and (old.base_price != saved.base_price or old.weight_per_unit != saved.weight_per_unit):
+        PriceChange.objects.create(
+            material=saved, old_price=old.base_price, new_price=saved.base_price,
+            old_weight=old.weight_per_unit, new_weight=saved.weight_per_unit, source="manual",
+        )
+    if saved.is_silver:
+        silver.recost([saved])
+    return saved
+
+
 def material_form(request, pk=None):
     material = get_object_or_404(Material, pk=pk) if pk else None
     copy_id = request.GET.get("copy", "")
@@ -836,24 +867,9 @@ def material_form(request, pk=None):
     if source:
         initial = model_to_dict(source, fields=[f for f in MaterialForm.Meta.fields if f != "category_name"])
         initial.update(name=f"{source.name} (copy)", category_name=source.category.name if source.category else "")
-    form = MaterialForm(request.POST or None, instance=material, initial=initial)
+    form = MaterialForm(request.POST if request.method == "POST" else None, instance=material, initial=initial)
     if request.method == "POST" and form.is_valid():
-        old = Material.objects.filter(pk=pk or getattr(source, "pk", None)).first()
-        saved = form.save(commit=False)
-        price_changed = old is not None and any(
-            getattr(old, f) != getattr(saved, f) for f in ("base_price", "pack_quantity", "weight_per_unit"))
-        if price_changed and "price_date" not in form.changed_data:
-            saved.price_date = timezone.localdate()
-        if source:
-            saved.sort_order = source.sort_order
-        saved.save()
-        if material and (old.base_price != saved.base_price or old.weight_per_unit != saved.weight_per_unit):
-            PriceChange.objects.create(
-                material=saved, old_price=old.base_price, new_price=saved.base_price,
-                old_weight=old.weight_per_unit, new_weight=saved.weight_per_unit, source="manual",
-            )
-        if saved.is_silver:
-            silver.recost([saved])
+        saved = _save_material_form(form, source)
         messages.success(request, f"Saved {saved.name}.")
         return redirect("tracker:material_list")
     return render(request, "tracker/material_form.html", {
@@ -861,6 +877,53 @@ def material_form(request, pk=None):
         "material": material,
         "source": source,
         "category_names": Category.objects.values_list("name", flat=True),
+    })
+
+
+def material_section_edit(request, section):
+    materials = Material.objects.select_related("category")
+    if section == "cat-quick":
+        materials = materials.filter(is_favourite=True)
+        name = "Quick add"
+    elif section == "cat-none":
+        materials = materials.filter(category=None)
+        name = "Uncategorised"
+    elif section.startswith("cat-") and section[4:].isdigit():
+        category = get_object_or_404(Category, pk=section[4:])
+        materials = materials.filter(category=category)
+        name = category.name
+    else:
+        raise Http404
+    if request.GET.get("inactive") != "1":
+        materials = materials.filter(is_active=True)
+    formset = MaterialSectionFormSet(
+        request.POST if request.method == "POST" else None, queryset=materials, prefix=f"grid-{section}",
+    )
+    next_url = reverse("tracker:material_list")
+    if request.GET.get("inactive") == "1":
+        next_url += "?inactive=1"
+    next_url += f"#{section}"
+    if request.method == "POST" and formset.is_valid():
+        changed = [form for form in formset if form.has_changed()]
+        with transaction.atomic():
+            for form in changed:
+                _save_material_form(form)
+        messages.success(request, f"Saved {len(changed)} materials in {name}.")
+        if request.htmx:
+            # A same-page fragment redirect alone would leave the old list and editor in place.
+            return HttpResponse(headers={"HX-Redirect": next_url, "HX-Refresh": "true"})
+        return redirect(next_url)
+    return render(request, "tracker/partials/material_section_edit.html", {
+        "formset": formset, "section": section, "section_name": name, "next_url": next_url,
+    })
+
+
+def material_grid_preview(request, pk):
+    material = get_object_or_404(Material, pk=pk)
+    form = MaterialGridForm(request.GET, instance=material, prefix=request.GET.get("prefix"))
+    valid = form.is_valid()
+    return render(request, "tracker/partials/material_grid_prices.html", {
+        "form": form, "valid": valid, "oob": True,
     })
 
 
@@ -978,25 +1041,35 @@ def price_apply(request):
     with transaction.atomic():
         for pk in request.POST.getlist("apply"):
             material = Material.objects.filter(pk=pk).first()
+            if material is None:
+                messages.error(request, "A material was deleted before its supplier price could be updated.")
+                continue
             try:
                 new_price = Decimal(request.POST[f"price_{pk}"])
                 new_weight = Decimal(request.POST[f"weight_{pk}"]) if request.POST.get(f"weight_{pk}") else material.weight_per_unit
             except (KeyError, InvalidOperation, AttributeError):
+                messages.error(request, "A supplier update was invalid or the material no longer exists.")
                 continue
-            if new_price <= 0:
+            try:
+                material.apply_supplier_price(new_price, new_weight, timezone.localdate())
+            except ValidationError as error:
+                messages.error(request, f"{material.name}: {' '.join(error.messages)}")
                 continue
-            PriceChange.objects.create(
-                material=material, old_price=material.base_price, new_price=new_price,
-                old_weight=material.weight_per_unit, new_weight=new_weight,
-            )
-            material.base_price, material.weight_per_unit = new_price, new_weight
-            material.price_date = timezone.localdate()
-            material.save(update_fields=["base_price", "weight_per_unit", "price_date", "last_updated"])
             updated.append(material)
         silver.recost([m for m in updated if m.is_silver])
     n = len(updated)
     messages.success(request, f"Updated {n} price{'s' if n != 1 else ''}. Past purchases keep the price they were charged.")
     return redirect("tracker:material_list")
+
+
+def daily_price_status(request):
+    from .background import prices_running
+
+    refresh = DailyPriceRefresh.objects.filter(day=timezone.localdate()).first()
+    return render(request, "tracker/partials/daily_price_status.html", {
+        "refresh": refresh,
+        "running": refresh is not None and refresh.finished_at is None and prices_running(),
+    })
 
 
 def silver_price(request):

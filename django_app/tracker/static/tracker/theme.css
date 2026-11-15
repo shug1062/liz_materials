@@ -146,6 +146,7 @@ tr.inactive td.name { text-decoration: line-through; }
 .sub-text { display: block; font-size: .8rem; font-weight: 300; color: var(--muted); }
 .unit { font-size: .8rem; font-weight: 300; color: var(--muted); }
 .students-table { table-layout: fixed; }
+.students-table .actions { flex-wrap: wrap; }
 .students-table th:nth-child(1) { width: 25%; }
 .students-table th:nth-child(2), .students-table th:nth-child(3), .students-table th:nth-child(4) { width: 13%; }
 .materials-table { table-layout: fixed; min-width: 64rem; }
@@ -153,6 +154,15 @@ tr.inactive td.name { text-decoration: line-through; }
 .materials-table th:nth-child(2) { width: 13%; }
 .materials-table th:nth-child(7) { width: 13%; }
 .materials-table th:nth-child(8) { width: 16rem; }
+.material-grid-form { margin: 0; }
+.material-grid-form > .body { padding: .75rem 1.35rem 0; }
+.material-grid { table-layout: auto; }
+.material-grid th:nth-child(1) { width: 20%; }
+.material-grid th:nth-child(2), .material-grid th:nth-child(7) { width: 18%; }
+.material-grid td { vertical-align: top; padding: .65rem; }
+.material-grid input, .material-grid select { min-width: 5rem; padding: .45rem; font-size: .85rem; margin-bottom: .4rem; }
+.material-grid label { margin: 0; }
+.material-grid .errorlist { font-size: .8rem; }
 .capitalise::first-letter { text-transform: uppercase; }
 
 /* Badges & money */
