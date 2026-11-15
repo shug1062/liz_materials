@@ -1,0 +1,26 @@
+{% if pending_materials %}
+<section class="panel">
+  <header><h3>Pending materials - not yet charged</h3></header>
+  <div class="body">
+    <p>Enter each quantity or weight to record the purchase at the current material price.</p>
+    <figure><table>
+      <thead><tr><th>Material</th><th>Project</th><th>Notes</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for item in pending_materials %}
+        <tr>
+          <td>{{ item.material.name }} ({{ item.material.unit_type }})</td>
+          <td>{{ item.project|default:"-" }}</td><td>{{ item.notes }}</td>
+          <td>
+            <a role="button" class="small" href="{% url 'tracker:pending_material_complete' item.pk %}?next={{ request.get_full_path|urlencode }}">Enter quantity / weight</a>
+            <form method="post" action="{% url 'tracker:pending_material_delete' item.pk %}" class="inline">
+              {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="small danger-ghost">Remove</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></figure>
+  </div>
+</section>
+{% endif %}

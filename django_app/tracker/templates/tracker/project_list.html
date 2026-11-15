@@ -11,7 +11,7 @@
 </div>
 
 {% for r in rows %}
-<details class="group" {% if forloop.first %}open{% endif %}>
+<details class="group" id="project-{{ r.project.pk }}" {% if forloop.first or r.selected %}open{% endif %}>
   <summary>
     <span class="title">{{ r.project.name }}</span>
     <span class="badge">{{ r.students|length }} student{{ r.students|length|pluralize }}</span>
@@ -19,6 +19,15 @@
   </summary>
   <div class="panel-body">
     {% if r.project.description %}<p class="lede">{{ r.project.description }}</p>{% endif %}
+    <h3>Materials for each student</h3>
+    <ul>
+    {% for line in r.defaults %}
+      <li>{{ line.material.name }}: {% if line.default_quantity %}{{ line.default_quantity|floatformat:"-2" }} {{ line.material.unit_type }}{% else %}individual quantity / weight (pending until entered){% endif %}{% if not line.material.is_active %} - inactive{% endif %}</li>
+    {% empty %}
+      <li>No defaults saved yet. Add to class uses active materials from the purchase history below, with blank quantities. Use Edit to save a reusable list and optional defaults.</li>
+    {% endfor %}
+    </ul>
+    <a role="button" class="small" href="{% url 'tracker:project_class_materials' r.project.pk %}">Add project materials to class</a>
     {% if r.students %}
       <p class="chips">{% for s in r.students %}<a class="chip" href="{{ s.get_absolute_url }}">{{ s.name }}</a>{% endfor %}</p>
     {% endif %}
@@ -40,7 +49,7 @@
           onsubmit="return confirm('Delete the project “{{ r.project.name|escapejs }}”? Its purchases are kept.');">
       {% csrf_token %}<button class="small danger-ghost">Delete</button>
     </form>
-    <a role="button" class="small ghost" href="{% url 'tracker:project_edit' r.project.pk %}">Edit</a>
+    <a role="button" class="small ghost" href="{% url 'tracker:project_edit' r.project.pk %}">Edit project &amp; materials</a>
   </div>
 </details>
 {% empty %}

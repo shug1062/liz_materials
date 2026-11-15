@@ -1,0 +1,63 @@
+{% load money %}
+<section class="panel shared-materials">
+  <header>
+    <h3>{% if archived_materials %}Archived materials{% else %}Shared materials{% endif %}</h3>
+    {% if archived_materials %}
+      <a role="button" class="small ghost" href="{% url 'tracker:class_mode' %}?class_name={{ class_name|urlencode }}">Back to shared materials</a>
+    {% else %}
+      <a role="button" class="small ghost" href="{% url 'tracker:class_mode' %}?class_name={{ class_name|urlencode }}&amp;archive=1">View archive ({{ material_grid.archive_count }})</a>
+    {% endif %}
+  </header>
+  <div class="panel-body">
+    <p>Materials held by at least 80% of active students stay visible whether paid or unpaid, until you archive them. New purchases, new pending items or any part-paid student automatically unarchive a material. Quantities include all purchases of that material in this class.</p>
+    <p>Payments clear oldest purchases first, including older debts. Pending means the quantity or weight is still blank and nothing has been charged for that item.</p>
+  </div>
+  {% if material_grid.columns %}
+  <figure>
+    <table>
+      <thead><tr>
+        <th scope="col">Student</th>
+        {% for column in material_grid.columns %}
+        <th scope="col">
+          {{ column.material.name }}
+          <form method="post" action="{% url 'tracker:class_material_archive' column.material.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="class_name" value="{{ class_name }}">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            {% if archived_materials %}
+              <button class="small ghost" name="action" value="restore">Restore</button>
+            {% elif column.part_paid %}
+              <span class="sub-text">Kept visible: part-paid</span>
+            {% else %}
+              <button class="small ghost" name="action" value="archive">Archive</button>
+            {% endif %}
+          </form>
+        </th>
+        {% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for row in material_grid.rows %}
+        <tr>
+          <th scope="row"><a href="{% url 'tracker:class_basket' row.student.pk %}?next={{ request.get_full_path|urlencode }}">{{ row.student.name }}</a></th>
+          {% for cell in row.cells %}
+          <td>
+            {% if cell %}
+              {% if cell.purchases %}
+                <span class="badge {{ cell.tone }}">{{ cell.status }}</span>
+                <span class="sub-text">{% if cell.material.kind == "order" %}{{ cell.quantity|gbp }}{% else %}{{ cell.quantity|floatformat:"-2" }} {{ cell.material.unit_type }}{% endif %}</span>
+              {% endif %}
+              {% if cell.pending %}<span class="badge">Pending ({{ cell.pending }})</span>{% endif %}
+            {% else %}
+              <span class="unit" aria-label="No material">—</span>
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </figure>
+  {% else %}
+  <div class="body empty">{% if archived_materials %}No archived materials for this class.{% else %}No shared materials to show. Materials appear here once at least 80% of active students have them.{% endif %}</div>
+  {% endif %}
+</section>

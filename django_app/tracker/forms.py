@@ -2,9 +2,10 @@ from decimal import Decimal
 from pathlib import Path
 
 from django import forms
+from django.db.models import Q
 from django.utils import timezone
 
-from .models import Category, Material, Payment, Project, Purchase, Sale, Student, StudioClass
+from .models import Category, Material, Payment, Project, ProjectMaterial, Purchase, Sale, Student, StudioClass
 
 
 class DateInput(forms.DateInput):
@@ -366,6 +367,94 @@ class ProjectForm(forms.ModelForm):
         model = Project
         fields = ["name", "description"]
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+
+
+class ProjectMaterialForm(forms.ModelForm):
+    default_quantity = forms.DecimalField(
+        required=False, min_value=Decimal("0.01"), max_digits=10, decimal_places=2, widget=DecimalInput(),
+        help_text="Use the material's sale unit. Leave blank for individual weights or amounts.",
+    )
+
+    class Meta:
+        model = ProjectMaterial
+        fields = ["material", "default_quantity"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["material"].queryset = Material.objects.filter(
+            Q(is_active=True) | Q(pk=self.instance.material_id)
+        )
+        self.fields["material"].label_from_instance = material_quantity_label
+
+
+def material_quantity_label(material):
+    unit = "GBP amount" if material.kind == Material.Kind.ORDER else material.unit_type
+    return f"{material.name} ({unit})" + (" - inactive" if not material.is_active else "")
+
+
+def material_entry_label(material):
+    if material.kind == Material.Kind.ORDER:
+        return "Amount (£)"
+    return {
+        "gram": "Weight (g)", "cm": "Length (cm)", "mm": "Length (mm)",
+        "item": "Quantity (items)", "piece": "Quantity (pieces)", "sheet": "Quantity (sheets)",
+    }.get(material.unit_type, f"Quantity ({material.unit_type})")
+
+
+ProjectMaterialFormSet = forms.inlineformset_factory(
+    Project, ProjectMaterial, form=ProjectMaterialForm, extra=3, can_delete=True,
+)
+
+
+class ClassMaterialsForm(forms.Form):
+    class_name = forms.ChoiceField(label="Class", required=False)
+    purchase_date = forms.DateField(initial=timezone.localdate, widget=DateInput())
+    project = forms.ModelChoiceField(queryset=Project.objects.all(), required=False)
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+
+    def __init__(self, *args, project=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["class_name"].choices = [
+            ("", "No class assigned"),
+            *((name, name) for name in StudioClass.objects.values_list("name", flat=True)),
+        ]
+        self.basket_materials = []
+        self.invalid_materials = False
+        if project:
+            del self.fields["project"]
+            return
+        keys = [key for key in self.data if key.startswith("qty_")]
+        ids = [int(key[4:]) for key in keys if key[4:].isdigit() and len(key[4:]) <= 18]
+        materials = {f"qty_{m.pk}": m for m in Material.objects.filter(is_active=True, pk__in=ids)}
+        self.invalid_materials = len(materials) != len(keys)
+        for key in sorted(materials, key=lambda key: materials[key].pk):
+            material = materials[key]
+            self.fields[key] = forms.DecimalField(
+                required=False, min_value=Decimal("0.01"), max_digits=10, decimal_places=2,
+                widget=DecimalInput({"aria-label": f"Quantity for {material.name}"}), label=material_quantity_label(material),
+            )
+            self.basket_materials.append((key, material))
+
+    def clean(self):
+        data = super().clean()
+        if self.invalid_materials:
+            raise forms.ValidationError("A selected material is unavailable. Remove it and review the basket again.")
+        return data
+
+
+class ClassMaterialQuantityForm(forms.Form):
+    include = forms.BooleanField(required=False, initial=True, label="Add")
+    quantity = forms.DecimalField(
+        required=False, min_value=Decimal("0.01"), max_digits=10, decimal_places=2, widget=DecimalInput(),
+    )
+
+
+class PendingMaterialForm(forms.Form):
+    quantity = forms.DecimalField(
+        min_value=Decimal("0.01"), max_digits=10, decimal_places=2, widget=DecimalInput(),
+    )
+    purchase_date = forms.DateField(widget=DateInput())
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
 
 class StudioClassForm(forms.ModelForm):

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% load money %}
+{% block content %}
+<a class="crumb" href="{{ back }}">Back</a>
+<div class="page-head">
+  {% if project %}<h1>{{ project.name }}: add to class</h1>{% else %}
+  <div><p class="eyebrow">Adding materials for</p><h1>{{ class_label }}</h1></div>{% endif %}
+</div>
+{% if project_setup_url %}
+<div class="note">
+  {% if using_history %}<p>Using active materials from this project's past purchases. Quantities start blank so you can enter each student's amount or leave it pending. You can save a reusable list with defaults using the setup button.</p>
+  {% elif needs_materials %}<p>This project has no active materials to add yet. Set up its materials list below.</p>{% endif %}
+  {% if excluded_history %}<p>Unavailable historical materials excluded: {{ excluded_history|join:", " }}.</p>{% endif %}
+  <a role="button" class="small ghost" href="{{ project_setup_url }}">{% if needs_materials %}Set up project materials{% else %}Edit project materials{% endif %}</a>
+</div>
+{% endif %}
+{% if class_basket_mode %}
+{% include "tracker/partials/purchase_basket.html" %}
+{% else %}
+<section class="panel">
+  <form method="get" action="#class-material-review">
+    <div class="panel-body">
+      <input type="hidden" name="next" value="{{ back }}">
+      {{ form.as_div }}
+      <p>Review every active student before saving. Archived students and sales channels are excluded.</p>
+    </div>
+    <div class="form-actions"><button name="review" value="1">Review class</button></div>
+  </form>
+</section>
+{% endif %}
+{% if rows %}
+<section class="panel" id="class-material-review">
+  <header><h3>Review quantities for {{ form.class_name.value|default:"No class assigned" }}</h3></header>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ back }}">
+    <input type="hidden" name="row_ids" value="{{ row_ids }}">
+    {% for field in form %}<input type="hidden" name="{{ field.html_name }}" value="{{ field.value|default_if_none:'' }}">{% endfor %}
+    <div class="panel-body">
+      <p>Adjust amounts for each student. Blank quantities stay pending and do not affect balances. Untick an item to skip it entirely. Changing the options above requires another review.</p>
+      <p>Each column shows the required sale unit. Use Apply to all to fill that material for every ticked student, then adjust individual values if needed. A blank value leaves the item pending. Prices are fixed when a purchase is recorded; pending items use the price when completed.</p>
+      <figure><table class="material-entry-grid">
+        <thead>
+          <tr>
+            <th scope="col">Student</th>
+            {% for column in review_columns %}
+            <th scope="col">
+              {{ column.material.name }}
+              <span class="sub-text">{{ column.entry_label }}</span>
+              <span class="sub-text">{{ column.material.final_price|gbp }} / {% if column.material.kind == "order" %}£1 entered{% else %}{{ column.material.unit_type }}{% endif %}</span>
+            </th>
+            {% endfor %}
+          </tr>
+          <tr>
+            <th scope="row">Add to all students<span class="sub-text">Ticked students only</span></th>
+            {% for column in review_columns %}
+            <td>
+              <div data-material-default>
+                <label for="all-material-{{ column.material.pk }}">{{ column.entry_label }}</label>
+                <input id="all-material-{{ column.material.pk }}" type="text" inputmode="decimal" autocomplete="off"
+                       value="{{ column.default|default_if_none:'' }}" aria-label="All students: {{ column.material.name }} - {{ column.entry_label }}">
+                <button type="button" class="small ghost" data-apply-material="{{ column.material.pk }}">Apply to all</button>
+              </div>
+            </td>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in review_students %}
+          <tr>
+            <th scope="row">{{ row.student.name }}</th>
+            {% for cell in row.cells %}
+            <td data-material-cell="{{ cell.material.pk }}">
+              {{ cell.form.include.errors }}
+              <label for="{{ cell.form.include.id_for_label }}">{{ cell.form.include }} Add</label>
+              {{ cell.form.non_field_errors }}{{ cell.form.quantity.errors }}{{ cell.form.quantity }}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></figure>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ back }}">Cancel</a>
+      <button type="submit">Save purchases and pending items</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

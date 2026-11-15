@@ -1,0 +1,7 @@
+<div class="btn-row class-project-links">
+  {% for project in class_projects %}
+    <a role="button" class="small ghost" href="{% url 'tracker:project_list' %}?project={{ project.pk }}#project-{{ project.pk }}">{{ project.name }}</a>
+  {% empty %}
+    <span class="unit">No projects added yet.</span>
+  {% endfor %}
+</div>

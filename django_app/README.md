@@ -59,6 +59,55 @@ Other settings remain unchanged and are available through each material's
 **Edit** link. Grid edits use the same price history and price-date rules as
 the full edit form.
 
+## Class-wide materials
+
+Projects linked through purchases or pending materials appear on the class
+register's class page and on class details. Each Classes row also shows a
+**Projects** button and named project links. Links open the corresponding
+project summary. These lists include historical linked projects; payment or
+material archiving does not remove a project's class association.
+
+On **Projects**, use **Edit project & materials** to save a reusable list of
+materials with optional default quantities. **Add project materials to class**
+opens a review table for every active student in the chosen class.
+**Add material to class** on Classes and Class register opens the same shared
+Quick add/search basket as individual students, allowing several materials.
+It reviews per-student quantities before saving. Archived students and sales
+channels are excluded.
+
+Older projects without defaults use previously purchased active materials
+directly, with blank quantities, and identify any unavailable materials excluded
+from the review. They also offer **Set up project materials** to save that
+suggested list with reusable defaults. Saving returns to the class allocation.
+Historical purchase quantities are never assumed to be per-student defaults.
+
+The review grid has students down the left and materials across the top, with
+explicit Weight (g), Quantity (items) or Amount (£) labels. Its **Add to all
+students** row fills one material's value for every ticked student when you
+press **Apply to all**, without saving. Individual values remain editable.
+Adjust each student's quantity, weight or amount before saving; untick an item
+to omit it. For individual silver weights, use
+a material sold per gram. Blank quantities create **pending materials**, not
+purchases: balances and accounting reports do not change until a quantity is
+entered. Complete or remove pending items from the student's basket or details
+page. Completed purchases use the current material price, retain the chosen
+purchase date and project, and use the existing silver-costing rules. Saving
+the class allocation, completing an item and removing an item all offer Undo.
+
+The Class register's class page also shows a **Shared materials** grid for
+materials held by at least 80% of its active students (including pending
+allocations). Each student shows their quantity and Paid, Part-paid, Unpaid
+or Pending status. Payments use the same oldest-purchases-first allocation
+as statements, including older debts; only purchases recorded in this class
+contribute to the displayed material quantities. Paid columns remain visible.
+Use **Archive** to hide an individual material for this class, or **View archive**
+to review and restore it. New purchases or pending allocations recorded after
+archiving, or any student with a part-paid amount for that material, automatically
+unarchive it when the grid is opened. It appears provided it still meets the
+80% threshold. Newness uses the time the item was added, not its purchase date.
+Once reopened it stays unarchived after payment is completed; you can archive
+it again when no student is part-paid. Archiving does not change purchases or balances.
+
 ## Daily online prices
 
 The first signed-in visit each day starts a background supplier-price update.

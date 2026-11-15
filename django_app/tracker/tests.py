@@ -20,7 +20,7 @@ from . import margins, reports, silver, statements, suppliers
 from .forms import MaterialForm
 from .models import (
     Category, DailyPriceRefresh, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass, StudioSettings,
-    estimated_unit_cost,
+    estimated_unit_cost, PendingMaterial, ProjectMaterial, ClassMaterialArchive,
 )
 
 
@@ -105,6 +105,380 @@ class BalanceTests(TestCase):
         self.add_purchase("1")
         with self.assertRaises(ProtectedError):
             self.material.delete()
+
+
+class ClassMaterialsTests(TestCase):
+    def setUp(self):
+        self.client.force_login(get_user_model().objects.create_user("materials", password="test-pass"))
+        self.anne = Student.objects.create(name="Anne", class_name="Tue")
+        self.bob = Student.objects.create(name="Bob", class_name="Tue")
+        Student.objects.create(name="Archived", class_name="Tue", is_archived=True)
+        Student.objects.create(name="Shop", class_name="Tue", is_sales_channel=True)
+        Student.objects.create(name="Elsewhere", class_name="Wed")
+        self.rings = make_material()
+        self.silver = make_material(name="Silver wire", unit_type="gram", pricing_type="per_gram",
+                                    is_silver=True, base_price=Decimal("2"), pack_quantity=Decimal("1"))
+        self.project = Project.objects.create(name="Pendant")
+        ProjectMaterial.objects.create(project=self.project, material=self.rings, default_quantity=Decimal("2"))
+        ProjectMaterial.objects.create(project=self.project, material=self.silver)
+        self.url = reverse("tracker:project_class_materials", args=[self.project.pk])
+        self.data = {"class_name": "Tue", "purchase_date": "2026-11-15", "notes": "Class project"}
+
+    def review(self, url=None, **options):
+        url = url or self.url
+        data = {**self.data, **options}
+        if "material" in data:
+            data[f"qty_{data.pop('material')}"] = data.pop("default_quantity", "")
+        response = self.client.get(url, {**data, "review": "1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["form"].errors)
+        data["row_ids"] = response.context["row_ids"]
+        for row in response.context["rows"]:
+            prefix = row["form"].prefix
+            data[f"{prefix}-include"] = "on"
+            data[f"{prefix}-quantity"] = row["form"]["quantity"].value() or ""
+        return data, response
+
+    def test_project_defaults_review_and_mixed_purchase_pending_undo(self):
+        data, response = self.review()
+        self.assertEqual(len(response.context["rows"]), 4)
+        self.assertFalse(Purchase.objects.exists())
+        self.assertFalse(PendingMaterial.objects.exists())
+        data[f"s{self.anne.pk}-m{self.silver.pk}-quantity"] = "3.25"
+        self.assertRedirects(self.client.post(self.url, data), reverse("tracker:project_list"))
+        self.assertEqual(Purchase.objects.count(), 3)
+        pending = PendingMaterial.objects.get()
+        self.assertEqual((pending.student, pending.material, pending.project), (self.bob, self.silver, self.project))
+        self.assertEqual(Student.objects.with_balances().get(pk=self.bob.pk).total_purchases, Decimal("0.24"))
+        purchase = Purchase.objects.get(student=self.anne, material=self.silver)
+        self.assertEqual((purchase.quantity, purchase.total_cost), (Decimal("3.25"), Decimal("7.80")))
+        self.assertEqual((purchase.class_name, purchase.purchase_date, purchase.notes),
+                         ("Tue", date(2026, 11, 15), "Class project"))
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        self.assertFalse(Purchase.objects.exists())
+        self.assertFalse(PendingMaterial.objects.exists())
+
+    def test_single_material_defaults_blank_pending_and_skip(self):
+        url = reverse("tracker:class_materials")
+        data, _ = self.review(url, material=self.rings.pk, default_quantity="4")
+        data[f"s{self.bob.pk}-m{self.rings.pk}-quantity"] = ""
+        self.client.post(url, data)
+        self.assertEqual(Purchase.objects.get().quantity, Decimal("4"))
+        self.assertEqual(PendingMaterial.objects.get().student, self.bob)
+        data, _ = self.review(url, material=self.silver.pk, default_quantity="")
+        del data[f"s{self.bob.pk}-m{self.silver.pk}-include"]
+        self.client.post(url, data)
+        self.assertEqual(PendingMaterial.objects.filter(material=self.silver).get().student, self.anne)
+
+    def test_different_silver_weights_and_excessive_total_validation(self):
+        url = reverse("tracker:class_materials")
+        data, _ = self.review(url, material=self.silver.pk, default_quantity="")
+        data[f"s{self.anne.pk}-m{self.silver.pk}-quantity"] = "2.5"
+        data[f"s{self.bob.pk}-m{self.silver.pk}-quantity"] = "4.25"
+        self.client.post(url, data)
+        self.assertEqual(Purchase.objects.get(student=self.anne).total_cost, Decimal("6"))
+        self.assertEqual(Purchase.objects.get(student=self.bob).total_cost, Decimal("10.20"))
+        self.assertFalse(PendingMaterial.objects.exists())
+        data[f"s{self.bob.pk}-m{self.silver.pk}-quantity"] = "99999999"
+        response = self.client.post(url, data)
+        self.assertTrue(any(row["form"].non_field_errors() for row in response.context["rows"]))
+        self.assertEqual(Purchase.objects.count(), 2)
+
+    def test_bad_quantity_and_stale_class_save_nothing(self):
+        data, _ = self.review()
+        key = f"s{self.bob.pk}-m{self.silver.pk}-quantity"
+        for invalid in ("-1", "0", "NaN", "Infinity", "1.001", "100000000", "not a weight"):
+            with self.subTest(invalid=invalid):
+                response = self.client.post(self.url, {**data, key: invalid})
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(any(row["form"].errors for row in response.context["rows"]))
+                self.assertFalse(Purchase.objects.exists())
+                self.assertFalse(PendingMaterial.objects.exists())
+        Student.objects.create(name="New enrolment", class_name="Tue")
+        response = self.client.post(self.url, data)
+        self.assertContains(response, "changed. Review the class again")
+        self.assertFalse(Purchase.objects.exists())
+        self.assertFalse(PendingMaterial.objects.exists())
+
+    def test_unavailable_material_empty_class_and_invalid_date(self):
+        data, _ = self.review()
+        self.silver.is_active = False
+        self.silver.save()
+        response = self.client.post(self.url, data)
+        self.assertContains(response, "inactive material")
+        for changes in ({"class_name": "Missing"}, {"purchase_date": ""}, {"class_name": ""}):
+            response = self.client.get(self.url, {**self.data, **changes, "review": "1"})
+            self.assertTrue(response.context["form"].errors)
+        self.assertFalse(Purchase.objects.exists())
+        self.assertFalse(PendingMaterial.objects.exists())
+
+    def test_pending_completion_validation_current_price_and_undo(self):
+        pending = PendingMaterial.objects.create(student=self.anne, material=self.silver, project=self.project,
+                                                  class_name="Tue", purchase_date=date(2026, 11, 15), notes="Weigh later")
+        for url in (reverse("tracker:class_basket", args=[self.anne.pk]), self.anne.get_absolute_url()):
+            self.assertContains(self.client.get(url), "Pending materials")
+        self.assertEqual(Student.objects.with_balances().get(pk=self.anne.pk).balance, 0)
+        self.silver.base_price = Decimal("3")
+        self.silver.save()
+        url = reverse("tracker:pending_material_complete", args=[pending.pk])
+        self.assertIsNone(self.client.get(url).context["form"]["quantity"].value())
+        self.assertEqual(self.client.post(url, {"quantity": "", "purchase_date": "2026-11-15"}).status_code, 200)
+        self.assertTrue(PendingMaterial.objects.exists())
+        response = self.client.post(url, {"quantity": "4.5", "purchase_date": "2026-11-15", "notes": "Weighed"})
+        self.assertRedirects(response, reverse("tracker:class_basket", args=[self.anne.pk]))
+        purchase = Purchase.objects.get()
+        self.assertEqual((purchase.quantity, purchase.unit_price, purchase.total_cost, purchase.project),
+                         (Decimal("4.5"), Decimal("3.6"), Decimal("16.20"), self.project))
+        self.assertFalse(PendingMaterial.objects.exists())
+        self.assertEqual(self.client.post(url, {"quantity": "4.5", "purchase_date": "2026-11-15"}).status_code, 404)
+        self.assertEqual(Purchase.objects.count(), 1)
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        self.assertFalse(Purchase.objects.exists())
+        self.assertEqual(PendingMaterial.objects.get().notes, "Weigh later")
+        self.client.post(reverse("tracker:pending_material_delete", args=[pending.pk]))
+        self.assertFalse(PendingMaterial.objects.exists())
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        self.assertTrue(PendingMaterial.objects.filter(pk=pending.pk).exists())
+
+    def test_project_material_list_edit_and_validation(self):
+        url = reverse("tracker:project_edit", args=[self.project.pk])
+        lines = list(self.project.material_defaults.all())
+        data = {
+            "name": "Pendant", "description": "With silver", "materials-TOTAL_FORMS": "3", "materials-INITIAL_FORMS": "2",
+            "materials-0-id": lines[0].pk, "materials-0-material": self.rings.pk, "materials-0-default_quantity": "5",
+            "materials-1-id": lines[1].pk, "materials-1-material": self.silver.pk, "materials-1-default_quantity": "",
+        }
+        self.assertRedirects(self.client.post(url, data), reverse("tracker:project_list"))
+        self.assertEqual(self.project.material_defaults.get(material=self.rings).default_quantity, Decimal("5"))
+        self.assertIsNone(self.project.material_defaults.get(material=self.silver).default_quantity)
+        response = self.client.post(url, {**data, "materials-0-default_quantity": "-1"})
+        self.assertTrue(response.context["material_forms"].errors)
+        response = self.client.post(url, {**data, "materials-2-material": self.rings.pk})
+        self.assertTrue(response.context["material_forms"].non_form_errors())
+        self.assertEqual(self.project.material_defaults.get(material=self.rings).default_quantity, Decimal("5"))
+        self.assertRedirects(self.client.post(url, {**data, "materials-1-DELETE": "on"}), reverse("tracker:project_list"))
+        self.assertEqual(self.project.material_defaults.count(), 1)
+        new_url = reverse("tracker:project_add")
+        self.assertTemplateUsed(self.client.get(new_url), "tracker/project_form.html")
+        self.assertRedirects(self.client.post(new_url, {
+            "name": "New ring", "materials-TOTAL_FORMS": "3", "materials-INITIAL_FORMS": "0",
+            "materials-0-material": self.rings.pk, "materials-0-default_quantity": "1",
+            "materials-1-material": self.silver.pk, "materials-1-default_quantity": "",
+        }), reverse("tracker:project_list"))
+        self.assertEqual(Project.objects.get(name="New ring").material_defaults.count(), 2)
+
+    def test_entry_links_and_merge_preserve_pending_items(self):
+        studio_class = StudioClass.objects.get(name="Tue")
+        for url in (reverse("tracker:class_list"), studio_class.get_absolute_url(),
+                    reverse("tracker:class_mode") + "?class_name=Tue"):
+            self.assertContains(self.client.get(url), "Add material to class")
+        self.assertContains(self.client.get(reverse("tracker:project_list")), self.url)
+        pending = PendingMaterial.objects.create(student=self.anne, material=self.rings, class_name="Tue")
+        self.client.post(reverse("tracker:student_merge", args=[self.anne.pk]), {"into": self.bob.pk})
+        pending.refresh_from_db()
+        self.assertEqual(pending.student_id, self.bob.pk)
+        self.client.post(reverse("tracker:undo"), {"id": self.client.session["undo"]["id"]})
+        pending.refresh_from_db()
+        self.assertEqual(pending.student_id, self.anne.pk)
+
+    def test_class_basket_multiple_materials_and_shared_component(self):
+        url = reverse("tracker:class_materials")
+        response = self.client.get(url, {"class_name": "Tue"})
+        self.assertTemplateUsed(response, "tracker/partials/purchase_basket.html")
+        self.assertContains(response, "Quick add")
+        self.assertContains(response, "Adding materials for")
+        self.assertTemplateUsed(self.client.get(reverse("tracker:class_basket", args=[self.anne.pk])),
+                               "tracker/partials/purchase_basket.html")
+        data, page = self.review(url, **{
+            f"qty_{self.rings.pk}": "2", f"qty_{self.silver.pk}": "", "project": self.project.pk,
+        })
+        self.assertEqual(len(page.context["rows"]), 4)
+        self.assertFalse(Purchase.objects.exists())
+        self.client.post(url, data)
+        self.assertEqual(Purchase.objects.filter(project=self.project).count(), 2)
+        self.assertEqual(PendingMaterial.objects.filter(project=self.project).count(), 2)
+        response = self.client.get(url, {**self.data, "qty_999999": "1", "review": "1"})
+        self.assertContains(response, "selected material is unavailable")
+
+    def test_review_matrix_has_student_rows_material_columns_and_preserves_errors(self):
+        order = make_material(name="Order", kind=Material.Kind.ORDER)
+        ProjectMaterial.objects.create(project=self.project, material=order)
+        data, page = self.review()
+        self.assertEqual([row["student"] for row in page.context["review_students"]], [self.anne, self.bob])
+        self.assertEqual([column["entry_label"] for column in page.context["review_columns"]],
+                         ["Quantity (items)", "Weight (g)", "Amount (£)"])
+        self.assertTrue(all(len(row["cells"]) == 3 for row in page.context["review_students"]))
+        self.assertContains(page, 'scope="col"', count=4)
+        self.assertContains(page, "data-apply-material=", count=3)
+        key = f"s{self.bob.pk}-m{self.silver.pk}-quantity"
+        data[key] = "-2"
+        data[f"s{self.anne.pk}-m{self.silver.pk}-quantity"] = "3.5"
+        response = self.client.post(self.url, data)
+        grid = response.context["review_students"]
+        self.assertEqual(grid[0]["cells"][1]["form"]["quantity"].value(), "3.5")
+        self.assertEqual(grid[1]["cells"][1]["form"]["quantity"].value(), "-2")
+        self.assertTrue(grid[1]["cells"][1]["form"].errors)
+        self.assertFalse(Purchase.objects.exists())
+
+    def test_empty_project_setup_suggests_history_and_returns_to_review(self):
+        self.project.material_defaults.all().delete()
+        for material in (self.rings, self.rings, self.silver):
+            purchase = Purchase(student=self.anne, material=material, project=self.project, quantity=Decimal("9"))
+            purchase.set_price(reprice=True)
+            purchase.save()
+        response = self.client.get(self.url, {**self.data, "review": "1"})
+        self.assertContains(response, "Set up project materials")
+        self.assertFalse(response.context["form"].errors)
+        self.assertEqual(len(response.context["rows"]), 4)
+        self.assertTrue(all(row["form"]["quantity"].value() is None for row in response.context["rows"]))
+        setup_url = response.context["project_setup_url"]
+        setup = self.client.get(setup_url)
+        formset = setup.context["material_forms"]
+        suggestions = [row["material"].value() for row in formset if row["material"].value()]
+        self.assertCountEqual(suggestions, [self.rings.pk, self.silver.pk])
+        self.assertTrue(all(row["default_quantity"].value() is None for row in formset))
+        self.assertFalse(self.project.material_defaults.exists())
+        data = {
+            "name": self.project.name, "next": setup.context["cancel_url"],
+            "materials-TOTAL_FORMS": formset.total_form_count(), "materials-INITIAL_FORMS": "0",
+        }
+        for index, row in enumerate(formset):
+            data[f"materials-{index}-material"] = row["material"].value() or ""
+            data[f"materials-{index}-default_quantity"] = ""
+        response = self.client.post(setup_url, data, follow=True)
+        self.assertEqual(self.project.material_defaults.count(), 2)
+        self.assertEqual(response.context["form"]["class_name"].value(), "Tue")
+        self.assertEqual(response.context["form"]["notes"].value(), "Class project")
+        self.assertEqual(len(response.context["rows"]), 4)
+        self.assertEqual(Purchase.objects.count(), 3)
+
+
+class SharedMaterialGridTests(TestCase):
+    def setUp(self):
+        self.client.force_login(get_user_model().objects.create_user("grid", password="test-pass"))
+        self.students = [Student.objects.create(name=f"Student {i}", class_name="Tue") for i in range(5)]
+        self.material = make_material(base_price=Decimal("10"), pack_quantity=Decimal("1"), markup_percentage=Decimal("0"))
+        self.other = make_material(name="Other material")
+        self.url = reverse("tracker:class_mode") + "?class_name=Tue"
+
+    def purchase(self, student, material=None, **kwargs):
+        purchase = Purchase(student=student, material=material or self.material, quantity=Decimal("1"), **kwargs)
+        purchase.set_price(reprice=True)
+        purchase.save()
+        return purchase
+
+    def grid(self, archive=False):
+        return self.client.get(self.url + ("&archive=1" if archive else "")).context["material_grid"]
+
+    def test_exact_eighty_percent_distinct_students_and_pending(self):
+        for student in self.students[:3]:
+            self.purchase(student)
+        self.purchase(self.students[0])
+        self.assertEqual(self.grid()["columns"], [])
+        PendingMaterial.objects.create(student=self.students[3], material=self.material, class_name="Tue")
+        archived = Student.objects.create(name="Archived", class_name="Tue", is_archived=True)
+        channel = Student.objects.create(name="Shop", class_name="Tue", is_sales_channel=True)
+        for student in (archived, channel):
+            self.purchase(student, self.other)
+        grid = self.grid()
+        self.assertEqual([column["material"] for column in grid["columns"]], [self.material])
+        self.assertEqual(grid["rows"][0]["cells"][0]["quantity"], Decimal("2"))
+        self.assertEqual(grid["rows"][3]["cells"][0]["pending"], 1)
+        self.assertIsNone(grid["rows"][4]["cells"][0])
+        Student.objects.create(name="Sixth", class_name="Tue")
+        self.assertEqual(self.grid()["columns"], [])  # Four of six is below 80%.
+
+    def test_fifo_partial_payments_credit_and_paid_materials_remain(self):
+        for student in self.students:
+            self.purchase(student, purchase_date=date(2026, 11, 15))
+        self.purchase(self.students[0], purchase_date=date(2026, 10, 1), class_name="Older class")
+        Payment.objects.create(student=self.students[0], amount=Decimal("15"))
+        Payment.objects.create(student=self.students[1], amount=Decimal("20"))
+        cells = [row["cells"][0] for row in self.grid()["rows"]]
+        self.assertEqual((cells[0]["status"], cells[0]["unpaid"], cells[0]["quantity"]),
+                         ("Part-paid", Decimal("5"), Decimal("1")))
+        self.assertEqual(cells[1]["status"], "Paid")
+        self.assertEqual(cells[2]["status"], "Unpaid")
+        for student in self.students:
+            Payment.objects.create(student=student, amount=Decimal("100"))
+        self.assertEqual(len(self.grid()["columns"]), 1)
+        self.assertTrue(all(row["cells"][0]["status"] == "Paid" for row in self.grid()["rows"]))
+
+    def test_archive_restore_is_class_specific_and_survives_roster_changes(self):
+        for student in self.students:
+            self.purchase(student)
+        url = reverse("tracker:class_material_archive", args=[self.material.pk])
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.client.post(url, {"class_name": "Tue", "action": "archive"})
+        self.assertEqual(self.grid()["columns"], [])
+        self.assertEqual(len(self.grid(archive=True)["columns"]), 1)
+        self.assertEqual(Purchase.objects.count(), 5)
+        self.assertEqual(ClassMaterialArchive.objects.get().class_name, "Tue")
+        for student in self.students:
+            student.class_name = "Wed"
+            student.save()
+        self.assertEqual(len(self.grid(archive=True)["columns"]), 1)
+        other = self.client.get(reverse("tracker:class_mode"), {"class_name": "Wed"}).context["material_grid"]
+        self.assertEqual(other["archive_count"], 0)
+        for student in self.students:
+            student.class_name = "Tue"
+            student.save()
+        self.client.post(url, {"class_name": "Tue", "action": "restore"})
+        self.assertEqual(len(self.grid()["columns"]), 1)
+        self.assertEqual(self.grid(archive=True)["columns"], [])
+
+    def test_shared_grid_queries_do_not_grow_per_student(self):
+        self.purchase(self.students[0])
+        def query_count():
+            with CaptureQueriesContext(connection) as queries:
+                self.client.get(self.url)
+            return len(queries)
+        query_count()
+        before = query_count()
+        for student in self.students[1:]:
+            self.purchase(student)
+            Payment.objects.create(student=student, amount=Decimal("1"))
+        self.assertEqual(query_count(), before)
+
+    def test_new_allocations_reopen_archive_and_can_be_archived_again(self):
+        for student in self.students:
+            self.purchase(student)
+        url = reverse("tracker:class_material_archive", args=[self.material.pk])
+        self.client.post(url, {"class_name": "Tue", "action": "archive"})
+        self.assertEqual(self.grid()["columns"], [])
+        self.purchase(self.students[0], class_name="Older class")
+        self.assertEqual(self.grid()["columns"], [])
+        new_purchase = self.purchase(self.students[0], purchase_date=date(2020, 1, 1))
+        self.assertEqual(len(self.grid()["columns"]), 1)
+        self.assertEqual(self.grid()["archive_count"], 0)
+        self.assertEqual(self.grid(archive=True)["columns"], [])
+        self.client.post(url, {"class_name": "Tue", "action": "archive"})
+        self.assertGreater(ClassMaterialArchive.objects.get().archived_at, new_purchase.created_at)
+        self.assertEqual(self.grid()["columns"], [])
+        pending = PendingMaterial.objects.create(student=self.students[1], material=self.material, class_name="Tue")
+        self.assertEqual(len(self.grid()["columns"]), 1)
+        self.assertEqual(self.grid()["archive_count"], 0)
+        pending.delete()
+        self.assertEqual(len(self.grid()["columns"]), 1)
+        self.assertFalse(ClassMaterialArchive.objects.exists())
+
+    def test_part_paid_reopens_without_new_purchases_and_stays_open_when_paid(self):
+        for student in self.students:
+            self.purchase(student)
+            Payment.objects.create(student=student, amount=Decimal("10"))
+        url = reverse("tracker:class_material_archive", args=[self.material.pk])
+        self.client.post(url, {"class_name": "Tue", "action": "archive"})
+        self.assertEqual(self.grid()["columns"], [])
+        Payment.objects.filter(student=self.students[0]).update(amount=Decimal("5"))
+        self.assertEqual(len(self.grid()["columns"]), 1)
+        self.assertEqual(self.grid()["rows"][0]["cells"][0]["status"], "Part-paid")
+        self.assertEqual(self.grid()["archive_count"], 0)
+        self.assertFalse(ClassMaterialArchive.objects.exists())
+        Payment.objects.filter(student=self.students[0]).update(amount=Decimal("10"))
+        self.assertEqual(len(self.grid()["columns"]), 1)
+        self.assertEqual(self.grid()["rows"][0]["cells"][0]["status"], "Paid")
+        self.client.post(url, {"class_name": "Tue", "action": "archive"})
+        self.assertEqual(self.grid()["columns"], [])
 
 
 class ViewTests(TestCase):
@@ -786,6 +1160,37 @@ class SilverPriceTests(TestCase):
 
 
 class ProjectTests(TestCase):
+    def test_class_projects_include_pending_and_purchases_once_and_link_to_summary(self):
+        student = Student.objects.create(name="Amy", class_name="Tue")
+        studio_class = StudioClass.objects.get(name="Tue")
+        material = make_material()
+        purchased_project = Project.objects.create(name="Ring")
+        pending_project = Project.objects.create(name="Pendant")
+        unrelated_project = Project.objects.create(name="Other class project")
+        for _ in range(2):
+            purchase = Purchase(student=student, material=material, quantity=Decimal("1"), project=purchased_project)
+            purchase.set_price(reprice=True)
+            purchase.save()
+        PendingMaterial.objects.create(student=student, material=material, project=purchased_project, class_name="Tue")
+        pending = PendingMaterial.objects.create(student=student, material=material, project=pending_project, class_name="Tue")
+        PendingMaterial.objects.create(student=student, material=material, project=unrelated_project, class_name="Wed")
+        expected = [pending_project, purchased_project]
+        for url in (reverse("tracker:class_mode") + "?class_name=Tue", studio_class.get_absolute_url()):
+            response = self.client.get(url)
+            self.assertEqual(response.context["class_projects"], expected)
+            self.assertContains(response, f'?project={pending_project.pk}#project-{pending_project.pk}')
+            self.assertNotContains(response, unrelated_project.name)
+        response = self.client.get(reverse("tracker:class_list"))
+        row = next(c for c in response.context["classes"] if c.pk == studio_class.pk)
+        self.assertEqual(row.projects, expected)
+        self.assertContains(response, f'{studio_class.get_absolute_url()}#class-projects')
+        self.assertContains(response, "Projects (2)")
+        response = self.client.get(reverse("tracker:project_list"), {"project": pending_project.pk})
+        self.assertContains(response, f'id="project-{pending_project.pk}" open')
+        pending.delete()
+        response = self.client.get(studio_class.get_absolute_url())
+        self.assertEqual(response.context["class_projects"], [purchased_project])
+
     def test_project_costs_and_delete_keeps_purchases(self):
         project = Project.objects.create(name="Ring")
         material = make_material()

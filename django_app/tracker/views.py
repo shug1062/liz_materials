@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.core.management import call_command
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, F, Max, ProtectedError, Q, Sum
+from django.db.models import Count, F, Max, Prefetch, ProtectedError, Q, Sum
 from django.forms.models import model_to_dict
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -25,10 +25,12 @@ from .forms import (
     PaymentFilterForm, PaymentForm, ProjectForm, PurchaseForm, PurchaseStudentForm,
     SaleFilterForm, SaleForm, SilverPriceForm, StudentForm,
     StudioClassForm, TermDatesForm, CourseFeeForm, NextTermForm,
+    ClassMaterialsForm, ClassMaterialQuantityForm, PendingMaterialForm, ProjectMaterialFormSet,
+    material_quantity_label, material_entry_label,
 )
 from .models import (
     ZERO, Category, DailyPriceRefresh, Material, Payment, PriceChange, Project, Purchase, Sale, SilverPrice, Student, StudioClass,
-    StudioSettings, money,
+    StudioSettings, PendingMaterial, ClassMaterialArchive, money,
 )
 
 NO_CLASS = "No class assigned"
@@ -193,12 +195,14 @@ def student_merge(request, pk):
     into = others.filter(pk=chosen).first() if chosen else None
     if request.method == "POST" and into:
         purchases, payments, sales = list(student.purchases.all()), list(student.payments.all()), list(student.sales.all())
+        pending = list(student.pending_materials.all())
         with transaction.atomic():
             undo.remember(request, f"Merged {student} ({student.class_name or 'no class'}) into {into}.",
-                          restore=[Student.objects.get(pk=into.pk), student, *purchases, *payments, *sales])
+                          restore=[Student.objects.get(pk=into.pk), student, *purchases, *payments, *sales, *pending])
             student.purchases.update(student=into)
             student.payments.update(student=into)
             student.sales.update(student=into)
+            student.pending_materials.update(student=into)
             into.email = into.email or student.email
             into.phone = into.phone or student.phone
             if student.notes:
@@ -295,6 +299,7 @@ def student_detail(request, pk):
         "payments": student.payments.all(),
         "sales": student.sales.all(),
         "statement": statements.statement_for(student),
+        "pending_materials": student.pending_materials.select_related("material", "project"),
     })
 
 
@@ -546,6 +551,84 @@ def _class_url(class_name):
     return f"{reverse('tracker:class_mode')}?{urlencode({'class_name': class_name})}"
 
 
+def _shared_material_grid(students, class_name, archived):
+    columns = {}
+
+    def cell_for(student, material, added_at):
+        column = columns.setdefault(material.pk, {"material": material, "cells": {}, "latest_added": added_at})
+        column["latest_added"] = max(column["latest_added"], added_at)
+        return column["cells"].setdefault(student.pk, {
+            "quantity": ZERO, "charged": ZERO, "unpaid": ZERO, "pending": 0, "purchases": 0,
+        })
+
+    for student in students:
+        for purchase, unpaid in statements.purchase_balances(student):
+            if purchase.class_name != class_name or purchase.material.kind == Material.Kind.LESSON:
+                continue
+            cell = cell_for(student, purchase.material, purchase.created_at)
+            cell["quantity"] += purchase.quantity
+            cell["charged"] += purchase.total_cost
+            cell["unpaid"] += unpaid
+            cell["purchases"] += 1
+        for pending in student.pending_materials.all():
+            if pending.class_name == class_name and pending.material.kind != Material.Kind.LESSON:
+                cell_for(student, pending.material, pending.created_at)["pending"] += 1
+    for column in columns.values():
+        column["part_paid"] = any(0 < cell["unpaid"] < cell["charged"] for cell in column["cells"].values())
+    archives = []
+    for entry in ClassMaterialArchive.objects.filter(class_name=class_name).select_related("material"):
+        column = columns.get(entry.material_id)
+        if column and (column["latest_added"] > entry.archived_at or column["part_paid"]):
+            # Once reopened, completing a payment must not silently archive the material again.
+            ClassMaterialArchive.objects.filter(pk=entry.pk, archived_at=entry.archived_at).delete()
+        else:
+            archives.append(entry)
+    archived_ids = {entry.material_id for entry in archives}
+    if archived:
+        for entry in archives:
+            columns.setdefault(entry.material_id, {"material": entry.material, "cells": {}})
+    visible = [
+        column for pk, column in columns.items()
+        if (pk in archived_ids if archived else
+            pk not in archived_ids and students and len(column["cells"]) * 5 >= len(students) * 4)
+    ]
+    visible.sort(key=lambda column: (column["material"].name.casefold(), column["material"].pk))
+    rows = []
+    for student in students:
+        cells = []
+        for column in visible:
+            cell = column["cells"].get(student.pk)
+            if cell is not None:
+                cell["material"] = column["material"]
+                if not cell["purchases"]:
+                    cell["status"], cell["tone"] = "", ""
+                elif not cell["unpaid"]:
+                    cell["status"], cell["tone"] = "Paid", "active"
+                elif cell["unpaid"] == cell["charged"]:
+                    cell["status"], cell["tone"] = "Unpaid", "thin"
+                else:
+                    cell["status"], cell["tone"] = "Part-paid", "suggested"
+            cells.append(cell)
+        rows.append({"student": student, "cells": cells})
+    return {"columns": visible, "rows": rows, "archive_count": len(archives)}
+
+
+def _projects_by_class(class_names):
+    class_names = set(class_names)
+    links = set(Purchase.objects.filter(class_name__in=class_names, project__isnull=False)
+                .order_by().values_list("class_name", "project_id"))
+    links.update(PendingMaterial.objects.filter(class_name__in=class_names, project__isnull=False)
+                 .order_by().values_list("class_name", "project_id"))
+    projects = Project.objects.in_bulk({project_id for _, project_id in links})
+    grouped = {name: [] for name in class_names}
+    for name, project_id in links:
+        if project_id in projects:
+            grouped[name].append(projects[project_id])
+    for items in grouped.values():
+        items.sort(key=lambda project: (project.name.casefold(), project.pk))
+    return grouped
+
+
 def class_mode(request):
     class_name = request.GET.get("class_name")
     students = Student.objects.active().filter(is_sales_channel=False)
@@ -556,11 +639,40 @@ def class_mode(request):
         if counts.get(""):
             classes.append(("", NO_CLASS, counts[""]))
         return render(request, "tracker/class_mode_index.html", {"classes": classes})
+    students = list(statements.with_history(students.filter(class_name=class_name)).prefetch_related(
+        Prefetch("pending_materials", queryset=PendingMaterial.objects.select_related("material")),
+    ))
+    archived = request.GET.get("archive") == "1"
     return render(request, "tracker/class_mode.html", {
         "class_name": class_name,
         "class_label": class_name or NO_CLASS,
-        "students": students.filter(class_name=class_name),
+        "students": students,
+        "class_projects": _projects_by_class([class_name])[class_name],
+        "material_grid": _shared_material_grid(students, class_name, archived),
+        "archived_materials": archived,
     })
+
+
+@require_POST
+def class_material_archive(request, material_pk):
+    material = get_object_or_404(Material, pk=material_pk)
+    class_name = request.POST.get("class_name")
+    if class_name is None:
+        raise Http404("Class is required.")
+    if class_name:
+        get_object_or_404(StudioClass, name=class_name)
+    action = request.POST.get("action")
+    if action == "archive":
+        ClassMaterialArchive.objects.update_or_create(
+            class_name=class_name, material=material, defaults={"archived_at": timezone.now()},
+        )
+        messages.success(request, f"Archived {material.name} for {class_name or NO_CLASS}. Purchases are unchanged.")
+    elif action == "restore":
+        ClassMaterialArchive.objects.filter(class_name=class_name, material=material).delete()
+        messages.success(request, f"Restored {material.name}. It appears in the grid when at least 80% of the class has it.")
+    else:
+        messages.error(request, "Choose Archive or Restore.")
+    return redirect(_next_url(request, _class_url(class_name)))
 
 
 def _quick_materials():
@@ -617,7 +729,167 @@ def class_basket(request, pk):
         "today": timezone.localdate(),
         "payment_form": PaymentForm(initial={"student": student.pk}, students=Student.objects.filter(pk=student.pk)),
         "owed": -student.balance if student.balance < 0 else ZERO,
+        "pending_materials": student.pending_materials.select_related("material", "project"),
     })
+
+
+def _validated_material_purchase(form, **values):
+    purchase = Purchase(**values)
+    purchase.set_price(reprice=True)
+    if purchase.material.is_silver:
+        silver.apply(purchase)
+    try:
+        purchase.full_clean()
+    except ValidationError as exc:
+        form.add_error(None, "; ".join(exc.messages))
+        return None
+    return purchase
+
+
+def _project_history_materials(project):
+    return Material.objects.filter(pk__in=project.purchases.values("material_id"))
+
+
+def class_materials(request, project_pk=None):
+    project = get_object_or_404(Project, pk=project_pk) if project_pk is not None else None
+    back = _next_url(request, reverse("tracker:project_list" if project else "tracker:class_list"))
+    data = request.POST if request.method == "POST" else request.GET if "review" in request.GET else None
+    form = ClassMaterialsForm(data, project=project, initial={"class_name": request.GET.get("class_name", "")})
+    project_setup_url = None
+    project_materials, excluded_history, using_history = [], [], False
+    if project:
+        project_materials = [(line.material, line.default_quantity)
+                             for line in project.material_defaults.select_related("material")]
+        if not project_materials:
+            using_history = True
+            for material in _project_history_materials(project):
+                if material.is_active:
+                    project_materials.append((material, None))
+                else:
+                    excluded_history.append(material.name)
+        resume = request.path + "?" + urlencode({
+            "class_name": (data or request.GET).get("class_name", ""),
+            "purchase_date": (data or request.GET).get("purchase_date", timezone.localdate().isoformat()),
+            "notes": (data or request.GET).get("notes", ""), "next": back, "review": "1",
+        })
+        project_setup_url = reverse("tracker:project_edit", args=[project.pk]) + "?" + urlencode({"next": resume})
+    rows, row_ids = [], ""
+    review_columns, review_students = [], []
+    if data is not None and form.is_valid():
+        values = form.cleaned_data
+        students = Student.objects.active().filter(class_name=values["class_name"], is_sales_channel=False)
+        materials = project_materials if project else [(material, values[key]) for key, material in form.basket_materials]
+        if not students.exists():
+            form.add_error(None, "This class has no active students.")
+        if not materials:
+            form.add_error(None, "Add materials to this project's materials list first." if project else
+                           "Add at least one material to the basket.")
+        if any(not material.is_active for material, _ in materials):
+            form.add_error(None, "The project includes an inactive material. Update its materials list before adding it.")
+        if not form.errors:
+            review_columns = [
+                {"material": material, "entry_label": material_entry_label(material), "default": default}
+                for material, default in materials
+            ]
+            for student in students:
+                student_row = {"student": student, "cells": []}
+                for material, default in materials:
+                    prefix = f"s{student.pk}-m{material.pk}"
+                    row_form = ClassMaterialQuantityForm(
+                        request.POST if request.method == "POST" else None,
+                        prefix=prefix, initial={"quantity": default},
+                    )
+                    row_form.fields["quantity"].widget.attrs["aria-label"] = (
+                        f"{student.name}: {material.name} - {material_entry_label(material)}"
+                    )
+                    row = {"student": student, "material": material, "form": row_form,
+                           "label": material_quantity_label(material)}
+                    rows.append(row)
+                    student_row["cells"].append(row)
+                review_students.append(student_row)
+            row_ids = ",".join(row["form"].prefix for row in rows)
+            if request.method == "POST":
+                valid_rows = all([row["form"].is_valid() for row in rows])
+                if request.POST.get("row_ids") != row_ids:
+                    form.add_error(None, "The class or project materials changed. Review the class again before saving.")
+                elif valid_rows:
+                    created = []
+                    for row in rows:
+                        row_form = row["form"]
+                        if not row_form.cleaned_data["include"]:
+                            continue
+                        fields = {
+                            "student": row["student"], "material": row["material"],
+                            "project": project or values.get("project"),
+                            "purchase_date": values["purchase_date"], "notes": values["notes"],
+                            "class_name": values["class_name"],
+                        }
+                        quantity = row_form.cleaned_data["quantity"]
+                        item = (PendingMaterial(**fields) if quantity is None else
+                                _validated_material_purchase(row_form, quantity=quantity, **fields))
+                        if item is not None:
+                            created.append(item)
+                    if not created:
+                        form.add_error(None, "Select at least one material to add.")
+                    if not form.errors and not any(row["form"].errors for row in rows):
+                        with transaction.atomic():
+                            for item in created:
+                                item.save()
+                        pending = sum(isinstance(item, PendingMaterial) for item in created)
+                        undo.remember(request, f"Added {len(created) - pending} purchases and {pending} pending materials.",
+                                      created=created)
+                        return redirect(back)
+    return render(request, "tracker/class_materials.html", {
+        "form": form, "project": project, "rows": rows, "row_ids": row_ids, "back": back,
+        "review_columns": review_columns, "review_students": review_students,
+        "project_setup_url": project_setup_url,
+        "needs_materials": project is not None and not project.material_defaults.exists(),
+        "using_history": using_history and bool(project_materials),
+        "excluded_history": excluded_history,
+        "class_basket_mode": project is None,
+        "class_label": form["class_name"].value() or NO_CLASS,
+        "quick": _quick_materials() if project is None else [],
+        "basket_lines": [{"material": material, "field": form[key]} for key, material in form.basket_materials],
+    })
+
+
+def pending_material_complete(request, pk):
+    pending = get_object_or_404(PendingMaterial.objects.select_related("student", "material", "project"), pk=pk)
+    back = _next_url(request, reverse("tracker:class_basket", args=[pending.student_id]))
+    form = PendingMaterialForm(request.POST if request.method == "POST" else None, initial={
+        "purchase_date": pending.purchase_date, "notes": pending.notes,
+    })
+    if request.method == "POST" and form.is_valid():
+        if not pending.material.is_active:
+            form.add_error(None, "This material is inactive. Reactivate it or remove this pending item.")
+        else:
+            purchase = _validated_material_purchase(
+                form, student=pending.student, material=pending.material, project=pending.project,
+                class_name=pending.class_name, **form.cleaned_data,
+            )
+            if purchase is not None:
+                with transaction.atomic():
+                    deleted, _ = PendingMaterial.objects.filter(pk=pending.pk).delete()
+                    if deleted:
+                        purchase.save()
+                        undo.remember(request, f"Completed pending material for {pending.student}.",
+                                      created=[purchase], restore=[pending])
+                    else:
+                        messages.error(request, "This pending material has already been completed or removed.")
+                return redirect(back)
+    return render(request, "tracker/form_page.html", {
+        "form": form, "title": f"{pending.student}: {material_quantity_label(pending.material)}",
+        "cancel_url": back,
+    })
+
+
+@require_POST
+def pending_material_delete(request, pk):
+    pending = get_object_or_404(PendingMaterial, pk=pk)
+    back = _next_url(request, reverse("tracker:class_basket", args=[pending.student_id]))
+    undo.remember(request, "Removed pending material.", restore=[pending])
+    pending.delete()
+    return redirect(back)
 
 
 def class_search(request):
@@ -995,7 +1267,7 @@ def material_delete(request, pk):
         material.delete()
         messages.success(request, f"Deleted {material.name}.")
     except ProtectedError:
-        messages.error(request, f"{material.name} has purchases recorded, so it can't be deleted – hide it instead.")
+        messages.error(request, f"{material.name} is used by purchases, projects or pending items, so it can't be deleted – hide it instead.")
     return redirect("tracker:material_list")
 
 
@@ -1159,8 +1431,10 @@ def _archive_candidates():
 def class_list(request):
     counts = dict(Student.objects.active().exclude(class_name="").values_list("class_name").annotate(n=Count("id")))
     classes = list(StudioClass.objects.all())
+    projects = _projects_by_class(c.name for c in classes)
     for c in classes:
         c.n_students = counts.get(c.name, 0)
+        c.projects = projects[c.name]
     return render(request, "tracker/class_list.html", {
         "classes": classes,
         "n_candidates": len(_archive_candidates()),
@@ -1249,6 +1523,8 @@ def class_form(request, pk=None):
             if old_name and old_name != saved.name:
                 Student.objects.filter(class_name=old_name).update(class_name=saved.name)
                 Purchase.objects.filter(class_name=old_name).update(class_name=saved.name)
+                PendingMaterial.objects.filter(class_name=old_name).update(class_name=saved.name)
+                ClassMaterialArchive.objects.filter(class_name=old_name).update(class_name=saved.name)
         messages.success(request, f"Saved {saved.name}.")
         return redirect(saved)
     return render(request, "tracker/form_page.html", {
@@ -1271,6 +1547,7 @@ def class_detail(request, pk):
     studio_class = get_object_or_404(StudioClass, pk=pk)
     return render(request, "tracker/class_detail.html", {
         "studio_class": studio_class,
+        "class_projects": _projects_by_class([studio_class.name])[studio_class.name],
         "students": _with_carried_debt(
             Student.objects.with_balances().active().filter(class_name=studio_class.name), studio_class.name),
         "candidates": _add_candidates(studio_class, ""),
@@ -1387,7 +1664,7 @@ def project_list(request):
     for p in Purchase.objects.filter(project__isnull=False).select_related("student", "material"):
         purchases_by_project.setdefault(p.project_id, []).append(p)
     rows = []
-    for project in Project.objects.all():
+    for project in Project.objects.prefetch_related("material_defaults__material"):
         purchases = purchases_by_project.get(project.pk, [])
         students = sorted({p.student for p in purchases}, key=lambda s: s.name)
         materials = {}
@@ -1400,6 +1677,8 @@ def project_list(request):
         total = sum((p.total_cost for p in purchases), ZERO)
         rows.append({
             "project": project,
+            "selected": request.GET.get("project") == str(project.pk),
+            "defaults": project.material_defaults.all(),
             "students": students,
             "materials": sorted(materials.values(), key=lambda m: m["material__name"]),
             "total": total,
@@ -1410,15 +1689,29 @@ def project_list(request):
 
 def project_form(request, pk=None):
     project = get_object_or_404(Project, pk=pk) if pk else None
+    back = _next_url(request, reverse("tracker:project_list"))
     form = ProjectForm(request.POST or None, instance=project)
-    if request.method == "POST" and form.is_valid():
-        saved = form.save()
+    suggested = []
+    if project and request.method == "GET" and not project.material_defaults.exists():
+        suggested = [{"material": material.pk} for material in _project_history_materials(project).filter(is_active=True)]
+    material_forms = ProjectMaterialFormSet(
+        request.POST if request.method == "POST" else None, instance=form.instance, prefix="materials", initial=suggested,
+    )
+    if suggested:
+        material_forms.extra = len(suggested) + 3
+    if request.method == "POST" and all([form.is_valid(), material_forms.is_valid()]):
+        with transaction.atomic():
+            saved = form.save()
+            material_forms.instance = saved
+            material_forms.save()
         messages.success(request, f"Saved project “{saved.name}”.")
-        return redirect("tracker:project_list")
-    return render(request, "tracker/form_page.html", {
+        return redirect(back)
+    return render(request, "tracker/project_form.html", {
         "form": form,
+        "material_forms": material_forms,
         "title": f"Edit {project.name}" if project else "New project",
-        "cancel_url": reverse("tracker:project_list"),
+        "cancel_url": back,
+        "suggested_materials": bool(suggested),
     })
 
 

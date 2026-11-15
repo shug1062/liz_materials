@@ -1,0 +1,12 @@
+<div class="basket-line"{% if line %} data-id="{{ line.material.pk }}" data-price="{{ line.material.final_price }}" data-step="{% if line.material.is_counted %}1{% else %}0.5{% endif %}"{% endif %}>
+  <span class="line-name">{{ line.material.name }}</span>
+  <span class="stepper">
+    <button type="button" class="ghost" data-delta="-1" aria-label="Less">−</button>
+    {% if line %}{{ line.field }}{% else %}<input type="text" inputmode="decimal" autocomplete="off" aria-label="Quantity">{% endif %}
+    <button type="button" class="ghost" data-delta="1" aria-label="More">+</button>
+  </span>
+  <span class="line-unit unit">{% if line.material.kind == "order" %}£ amount{% else %}{{ line.material.unit_type }}{% endif %}</span>
+  <strong class="line-total"></strong>
+  <button type="button" class="remove ghost" aria-label="Remove">×</button>
+  {% if line.field.errors %}<div>{{ line.field.errors }}</div>{% endif %}
+</div>

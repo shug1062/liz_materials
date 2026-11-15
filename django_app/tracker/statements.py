@@ -75,26 +75,33 @@ def with_history(students):
     )
 
 
+def purchase_balances(student):
+    """Allocate all payments oldest-first, including purchases from previous classes."""
+    purchases = sorted(student.purchases.all(), key=lambda p: (p.purchase_date, p.id))
+    remaining = sum((p.amount for p in student.payments.all()), ZERO)
+    balances = []
+    for purchase in purchases:
+        unpaid = max(purchase.total_cost - remaining, ZERO)
+        remaining = max(remaining - purchase.total_cost, ZERO)
+        balances.append((purchase, unpaid))
+    return balances
+
+
 def statement_for(student) -> Statement:
     """Load students through with_history() first, or this costs a query per purchase."""
-    purchases = sorted(student.purchases.all(), key=lambda p: (p.purchase_date, p.id))
+    balances = purchase_balances(student)
     paid = sum((p.amount for p in student.payments.all()), ZERO)
-    charged = sum((p.total_cost for p in purchases), ZERO)
+    charged = sum((p.total_cost for p, _ in balances), ZERO)
     statement = Statement(student=student)
     if paid >= charged:
         statement.credit = paid - charged
         return statement
 
     statement.owed = charged - paid
-    # Payments clear the oldest purchases first; whatever is left (even partly) is still owed.
-    remaining = paid
     grouped = {}
-    for purchase in purchases:
-        if remaining >= purchase.total_cost:
-            remaining -= purchase.total_cost
+    for purchase, unpaid in balances:
+        if not unpaid:
             continue
-        unpaid = purchase.total_cost - remaining
-        remaining = ZERO
         statement.owed_by_class[purchase.class_name] = statement.owed_by_class.get(purchase.class_name, ZERO) + unpaid
         material = purchase.material
         # Each course fee is its own line ("Course fee – Autumn term"), not lumped together.

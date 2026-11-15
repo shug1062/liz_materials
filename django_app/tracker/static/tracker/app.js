@@ -66,6 +66,35 @@ document.addEventListener("click", (event) => {
   amount.focus();
 });
 
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-apply-material]");
+  if (!button) return;
+  const source = button.closest("[data-material-default]").querySelector("input");
+  const value = source.value.trim().replace(",", ".");
+  const valid = value === "" || (/^\d{1,8}(\.\d{1,2})?$/.test(value) && Number(value) > 0);
+  source.setCustomValidity(valid ? "" : "Enter a positive amount with up to two decimal places, or leave blank.");
+  if (!source.reportValidity()) return;
+  source.value = value;
+  button.closest("form").querySelectorAll(`[data-material-cell="${CSS.escape(button.dataset.applyMaterial)}"]`).forEach((cell) => {
+    if (!cell.querySelector('input[type="checkbox"]').checked) return;
+    const input = cell.querySelector('input[name$="-quantity"]');
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+});
+
+document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-material-default] input")) event.target.setCustomValidity("");
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target.matches("[data-material-default] input")) {
+    event.preventDefault();
+    event.target.closest("[data-material-default]").querySelector("button").click();
+  }
+});
+
 // ---------- Class mode basket ----------
 (() => {
   const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
@@ -90,7 +119,8 @@ document.addEventListener("click", (event) => {
     basket.querySelector("[data-basket-total]").textContent = gbp.format(total);
     basket.querySelector("[data-basket-count]").textContent = `${lines.length} item${lines.length === 1 ? "" : "s"}`;
     basket.querySelector("[data-basket-empty]").hidden = lines.length > 0;
-    basket.querySelector("[data-basket-submit]").disabled = !lines.some((l) => parseQty(l.querySelector("input").value));
+    basket.querySelector("[data-basket-submit]").disabled = basket.hasAttribute("data-allow-pending")
+      ? lines.length === 0 : !lines.some((l) => parseQty(l.querySelector("input").value));
   }
 
   function add(tile) {
@@ -107,7 +137,7 @@ document.addEventListener("click", (event) => {
       line.querySelector(".line-unit").textContent = unit;
       const input = line.querySelector("input");
       input.name = `qty_${id}`;
-      input.value = "1";
+      input.value = basket.hasAttribute("data-allow-pending") && (step !== "1" || "amount" in tile.dataset) ? "" : "1";
       basket.querySelector("#basket-lines").append(line);
       if (step !== "1" || "amount" in tile.dataset) {
         input.focus();
@@ -144,4 +174,6 @@ document.addEventListener("click", (event) => {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && event.target.matches("[data-search]")) event.preventDefault();
   });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", refresh);
+  else refresh();
 })();

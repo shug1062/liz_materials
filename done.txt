@@ -85,3 +85,16 @@ add edit button to students on student page next to email statement. this should
 make the students -> purchase page the same as the  the class register -> class -> student page. add the purchase note option to the page not matter which direction it comes from.
 
 on class register, when going through a class to a student, there is the pay cash button. that automattically pays the current balance in cash. this should take to a pay cash form that allows different cash amounts to be paid. students will pay a portion of the balance or overpay or pay in full. dont assume what the payment is though.
+
+get class in grid form
+
+on the class page, show a grid of materials that are shared by all students when the balance for any of those materials have not been paid. i want to be able to quickly see in a class what everyone has and whose has paid for those materials and not.
+eg main>class register > class -- this shows the students, but also have the grid showing any materials for all that have anyone unpaid. if everyone has paid, then dont show that any more. have an option to show paid material so i can always review whats been paid.
+
+when a project is added to a class, on the class register page, in the class, show what projects they are doing.
+
+also on the main>classes page, in each class show what projects they are doing.
+
+also show a button in the class line showing what projects they are doing
+
+on class register, when going through a class to a student, there is the pay cash button. that automattically pays the current balance in cash. this should take to a pay cash form that allows different cash amounts to be paid. students will pay a portion of the balance or overpay or pay in full. dont assume what the payment is though.

@@ -1,0 +1,54 @@
+<form method="{% if class_basket_mode %}get{% else %}post{% endif %}" id="basket-form" class="basket-layout"{% if class_basket_mode %} data-allow-pending action="#class-material-review"{% endif %}>
+  {% if class_basket_mode %}<input type="hidden" name="review" value="1">{% else %}{% csrf_token %}{% endif %}
+  <input type="hidden" name="next" value="{{ back }}">
+  <div>
+    <section class="panel">
+      <header><h3>Quick add</h3></header>
+      <div class="body tile-grid materials">{% include "tracker/partials/material_tiles.html" with materials=quick %}</div>
+    </section>
+    <section class="panel">
+      <header><h3>Find a material</h3></header>
+      <div class="body">
+        <input type="search" name="q" placeholder="Type part of a name, e.g. “jump 10”" autocomplete="off" data-search
+               hx-get="{% url 'tracker:class_search' %}" hx-trigger="input changed delay:250ms, search" hx-target="#search-results">
+        <div id="search-results" class="tile-grid materials"></div>
+      </div>
+    </section>
+  </div>
+  <section class="panel basket">
+    <header><h3>Basket</h3><span class="badge" data-basket-count>0 items</span></header>
+    <div class="body">
+      {% if class_basket_mode %}
+        {{ form.non_field_errors }}
+        {{ form.class_name.errors }}<label>Class {{ form.class_name }}</label>
+        <p>Default quantities are applied to each student. Leave a quantity blank to keep that material pending (not charged). You can adjust each student's amount on the next page.</p>
+      {% endif %}
+      <div id="basket-lines">
+        <p class="empty" data-basket-empty>Tap a material to add it.</p>
+        {% for line in basket_lines %}{% include "tracker/partials/basket_line.html" %}{% endfor %}
+      </div>
+      <div class="basket-total"><span>{% if class_basket_mode %}Known total per student{% else %}Total{% endif %}</span><strong data-basket-total>£0.00</strong></div>
+      <details class="more"{% if class_basket_mode %} open{% endif %}>
+        <summary>Date &amp; project</summary>
+        {% if class_basket_mode %}
+          {{ form.purchase_date.errors }}<label>Date {{ form.purchase_date }}</label>
+          {{ form.project.errors }}<label>Project {{ form.project }}</label>
+        {% else %}
+          <label>Date <input type="date" name="purchase_date" value="{{ today|date:'Y-m-d' }}"></label>
+          <label>Project
+            <select name="project"><option value="">None</option>{% for p in projects %}<option value="{{ p.pk }}">{{ p.name }}</option>{% endfor %}</select>
+          </label>
+        {% endif %}
+      </details>
+      <label>Purchase note (optional)
+        {% if class_basket_mode %}{{ form.notes.errors }}{{ form.notes }}{% else %}<textarea name="notes" rows="2" aria-describedby="purchase-note-help"></textarea>{% endif %}
+      </label>
+      <p class="helptext" id="purchase-note-help">Saved on every item in this basket.</p>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ back }}">Cancel</a>
+      <button type="submit" data-basket-submit disabled>{% if class_basket_mode %}Review class{% else %}Add to {{ student.name }}’s account{% endif %}</button>
+    </div>
+  </section>
+</form>
+<template id="basket-line">{% include "tracker/partials/basket_line.html" with line=None %}</template>

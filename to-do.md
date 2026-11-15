@@ -1,8 +1,7 @@
-detail projects per class
-
 make what people are more onions
 
-get class in grid form
+
+
 
 
 

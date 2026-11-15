@@ -337,6 +337,14 @@ details.menu .menu-items button, details.menu .menu-items form { width: 100%; ma
 .fetch-status.error { color: var(--ruby); }
 .checkbox-row { display: flex; align-items: center; gap: .5rem; margin-top: 2rem; }
 .panel-body { padding: 1rem 1.35rem 0; }
+.shared-materials { margin-top: 2rem; }
+.shared-materials table { min-width: 100%; width: max-content; }
+.shared-materials th, .shared-materials td { min-width: 9rem; max-width: 16rem; }
+.shared-materials th:first-child { position: sticky; left: 0; background: white; z-index: 1; }
+.shared-materials th form { margin: .5rem 0 0; }
+.material-entry-grid { min-width: 100%; width: max-content; }
+.material-entry-grid th, .material-entry-grid td { min-width: 13rem; max-width: 18rem; vertical-align: top; }
+.material-entry-grid th:first-child { position: sticky; left: 0; background: white; z-index: 1; }
 tr.muted-row td { color: var(--muted); }
 .price-check input[type=checkbox] { margin: 0; }
 .form-actions .lede { margin: 0 auto 0 0; font-size: .85rem; align-self: center; }

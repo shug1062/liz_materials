@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <header><h3>{{ title }}</h3></header>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ cancel_url }}">
+    <div class="panel-body">
+      {{ form.as_div }}
+      <h3>Materials for each student</h3>
+      {% if suggested_materials %}<p class="note">Active materials from this project's past purchases are suggested below. Review or remove them before saving. Quantities are deliberately blank, not copied from historical totals.</p>{% endif %}
+      <p>Set optional default quantities in each material's sale unit. For individual silver weights, choose a material sold per gram and leave the default blank. Save to add more rows.</p>
+      {{ material_forms.management_form }}
+      {{ material_forms.non_form_errors }}
+      <figure><table>
+        <thead><tr><th>Material (sale unit)</th><th>Default quantity</th><th>Remove</th></tr></thead>
+        <tbody>
+        {% for row in material_forms %}
+          <tr>
+            <td>{{ row.non_field_errors }}{% for hidden in row.hidden_fields %}{{ hidden.errors }}{{ hidden }}{% endfor %}{{ row.material.errors }}{{ row.material }}</td>
+            <td>{{ row.default_quantity.errors }}{{ row.default_quantity }}</td>
+            <td>{{ row.DELETE }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></figure>
+    </div>
+    <div class="form-actions">
+      <a role="button" class="ghost" href="{{ cancel_url }}">Cancel</a>
+      <button type="submit">Save project</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

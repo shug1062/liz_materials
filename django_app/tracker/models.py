@@ -287,6 +287,46 @@ class Purchase(models.Model):
         self.cost_total = money(self.quantity * self.unit_cost) if self.unit_cost is not None else None
 
 
+class ProjectMaterial(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="material_defaults")
+    material = models.ForeignKey(Material, on_delete=models.PROTECT)
+    default_quantity = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        ordering = ["pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["project", "material"], name="unique_project_material"),
+            models.CheckConstraint(condition=models.Q(default_quantity__isnull=True) | models.Q(default_quantity__gt=0),
+                                   name="positive_project_default"),
+        ]
+
+
+class PendingMaterial(models.Model):
+    """An allocated material with no quantity yet; not a purchase or a charge."""
+
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="pending_materials")
+    material = models.ForeignKey(Material, on_delete=models.PROTECT)
+    project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.SET_NULL)
+    purchase_date = models.DateField(default=timezone.localdate)
+    class_name = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["pk"]
+
+
+class ClassMaterialArchive(models.Model):
+    class_name = models.CharField(max_length=100, blank=True)
+    material = models.ForeignKey(Material, on_delete=models.CASCADE)
+    archived_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["class_name", "material"], name="unique_class_material_archive"),
+        ]
+
+
 def estimated_unit_cost(unit_price: Decimal, markup_percentage: Decimal) -> Decimal:
     """Best guess at an old purchase's cost: take the material's markup back off the price charged."""
     return (unit_price / (1 + markup_percentage / 100)).quantize(UNIT_PRICE_PLACES, rounding=ROUND_HALF_UP)
